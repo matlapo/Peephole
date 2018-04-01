@@ -93,12 +93,13 @@ int simplify_goto_goto(CODE **c)
   return 0;
 }
 
-/* OUR PATTERNS START HERE */
+/***********************************/
+/***** OUR PATTERNS START HERE *****/
+/***********************************/
 
 /* aload x
  * pop
  * -------->
- *
  */
 /* Soundness: this is sound because we push onto the stack x than pop x, equivalent of doing nothing */
 int simplify_push_pop(CODE **c)
@@ -154,10 +155,45 @@ int simplify_icmpne_with_0_loaded(CODE **c)
   return 0;
 }
 
+/*
+ * aload x or iload x
+ * const_0
+ * add
+ * -------->
+ * aload x or iload x
+*/
+int simplify_add_0(CODE **c)
+{
+  int x = 0;
+  int k = 0;
+  if (is_aload(*c, &x) && is_ldc_int(next(*c), &k) && k == 0 && is_iadd(next(next(*c))))
+    replace(c, 3, makeCODEaload(x, NULL));
+  else if (is_iload(*c, &x) && is_ldc_int(next(*c), &k) && k == 0 && is_iadd(next(next(*c))))
+      replace(c, 3, makeCODEiload(x, NULL));
+  return 0;
+}
+
+/*
+ * aload x or iload x
+ * const_0
+ * mul
+ * -------->
+ * aload x or iload x
+*/
+int simplify_mul_1(CODE **c)
+{
+  int x = 0;
+  int k = 0;
+  if (is_aload(*c, &x) && is_ldc_int(next(*c), &k) && k == 1 && is_imul(next(next(*c))))
+    replace(c, 3, makeCODEaload(x, NULL));
+  else if (is_iload(*c, &x) && is_ldc_int(next(*c), &k) && k == 1 && is_imul(next(next(*c))))
+      replace(c, 3, makeCODEiload(x, NULL));
+  return 0;
+}
+
 /* goto L
  * L:
  * ...
- *
  * -------->
  * L:
  */
@@ -171,6 +207,116 @@ int simplify_unecessary_goto(CODE **c)
   return 0;
 }
 
+/* aload x
+ * aload x
+ * mul
+ * -------->
+ * aload x
+ * dup
+ * mul
+ */
+int simplify_double_aload_mul(CODE **c)
+{
+  int x = 0;
+  int y = 0;
+  if (is_aload(*c, &x) && is_aload(next(*c), &y) && x == y && is_imul(next(next(*c))))
+    return
+      replace(c, 3, makeCODEaload(x,
+        makeCODEdup(
+          makeCODEimul(NULL)
+        )
+      )
+    );
+  return 0;
+}
+
+/* aload x
+ * aload x
+ * add
+ * -------->
+ * aload x
+ * dup
+ * add
+ */
+int simplify_double_aload_add(CODE **c)
+{
+  int x = 0;
+  int y = 0;
+  if (is_aload(*c, &x) && is_aload(next(*c), &y) && x == y && is_iadd(next(next(*c))))
+    return
+      replace(c, 3, makeCODEaload(x,
+        makeCODEdup(
+          makeCODEiadd(NULL)
+        )
+      )
+    );
+  return 0;
+}
+
+/*
+ * istore x
+ * iload x
+ * ------>
+ * dup
+ * istore x
+ */
+int simplify_istore_iload(CODE **c)
+{
+  int x = 0;
+  int y = 0;
+  if (is_istore(*c, &x) && is_iload(next(*c), &y) && x == y)
+    return replace(c, 2, makeCODEdup(makeCODEistore(x, NULL)));
+  return 0;
+}
+
+/*
+ * astore x
+ * aload x
+ * ------>
+ * dup
+ * astore x
+ */
+int simplify_astore_aload(CODE **c)
+{
+  int x = 0;
+  int y = 0;
+  if (is_astore(*c, &x) && is_aload(next(*c), &y) && x == y)
+    return replace(c, 2, makeCODEdup(makeCODEastore(x, NULL)));
+  return 0;
+}
+
+/*
+ * iload x
+ * iload x
+ * ...
+ * -------->
+ * iload x
+ * dup
+*/
+int simplify_duplicate_iload(CODE **c)
+{
+  int x = 0;
+  int y = 0;
+  if (is_iload(*c, &x) && is_iload(next(*c), &y) && x == y)
+    return replace(c, 2, makeCODEiload(x,
+                         makeCODEdup(NULL)
+    )
+  );
+  return 0;
+}
+
+/*
+ * L:
+ * --------->
+ *
+ */
+int simplify_unecessary_label(CODE **c)
+{
+  int x = 0;
+  if (is_label(*c, &x) && deadlabel(x))
+    return replace(c, 1, NULL);
+  return 0;
+}
 
 void init_patterns(void) {
 	ADD_PATTERN(simplify_multiplication_right);
@@ -182,4 +328,12 @@ void init_patterns(void) {
   ADD_PATTERN(simplify_cmpeq_with_0_loaded);
   ADD_PATTERN(simplify_icmpne_with_0_loaded);
   ADD_PATTERN(simplify_unecessary_goto);
+  ADD_PATTERN(simplify_double_aload_mul);
+  ADD_PATTERN(simplify_double_aload_add);
+  ADD_PATTERN(simplify_astore_aload);
+  ADD_PATTERN(simplify_istore_iload);
+  ADD_PATTERN(simplify_duplicate_iload);
+  ADD_PATTERN(simplify_add_0);
+  ADD_PATTERN(simplify_mul_1);
+  ADD_PATTERN(simplify_unecessary_label);
 }
