@@ -95,21 +95,81 @@ int simplify_goto_goto(CODE **c)
 
 /* OUR PATTERNS START HERE */
 
-/*
- * aload x
+/* aload x
  * pop
- * ------->
+ * -------->
  *
  */
-// This is sound because we push onto the stack x than pop x, equivalent of doing nothing
+/* Soundness: this is sound because we push onto the stack x than pop x, equivalent of doing nothing */
 int simplify_push_pop(CODE **c)
 {
-  if (is_simplepush(*c) && is_pop(next(*c))) {
+  if (is_simplepush(*c) && is_pop(next(*c)))
      return replace(c, 2, NULL);
-  }
   return 0;
 }
 
+/* dup
+ * istore x
+ * pop
+ * -------->
+ * istore x
+ */
+/* Soundness: istore operation already takes care of popping the stack */
+int simplify_dup_istore(CODE **c)
+{
+  int x = 0;
+  if (is_dup(*c) && is_istore(next(*c), &x) && is_pop(nextby(*c, 2)))
+     return replace(c, 3, makeCODEistore(x, NULL));
+  return 0;
+}
+
+/* iconst_0
+ * if_icmpeq L
+ * -------->
+ * ifeq L
+ */
+ /* Soundness: ifeq already checks by default if it is 0, no need to load a const 0 */
+int simplify_cmpeq_with_0_loaded(CODE **c)
+{
+  int x = 0;
+  int y = 0;
+  if (is_ldc_int(*c, &x) && x == 0 && is_if_icmpeq(next(*c), &y))
+    return replace(c, 2, makeCODEifeq(y, NULL));
+
+  return 0;
+}
+
+/* iconst_0
+ * if_icmpne L
+ * -------->
+ * ifne L
+ */
+ /* Soundness: same as above, but for cmpne */
+int simplify_icmpne_with_0_loaded(CODE **c)
+{
+  int x = 0;
+  int y = 0;
+  if (is_ldc_int(*c, &x) && x == 0 && is_if_icmpne(next(*c), &y))
+    return replace(c, 2, makeCODEifne(y, NULL));
+  return 0;
+}
+
+/* goto L
+ * L:
+ * ...
+ *
+ * -------->
+ * L:
+ */
+ /* Soundness: goto L followed directly by the label it refers is the same as the label itself */
+int simplify_unecessary_goto(CODE **c)
+{
+  int x = 0;
+  int y = 0;
+  if (is_goto(*c, &x) && is_label(next(*c), &y) && x == y)
+    return replace(c, 2, makeCODElabel(x, NULL));
+  return 0;
+}
 
 
 void init_patterns(void) {
@@ -118,4 +178,8 @@ void init_patterns(void) {
 	ADD_PATTERN(positive_increment);
 	ADD_PATTERN(simplify_goto_goto);
 	ADD_PATTERN(simplify_push_pop);
+  ADD_PATTERN(simplify_dup_istore);
+  ADD_PATTERN(simplify_cmpeq_with_0_loaded);
+  ADD_PATTERN(simplify_icmpne_with_0_loaded);
+  ADD_PATTERN(simplify_unecessary_goto);
 }
