@@ -92,9 +92,30 @@ int simplify_goto_goto(CODE **c)
   }
   return 0;
 }
+
+/* OUR PATTERNS START HERE */
+
+/*
+ * aload x
+ * pop
+ * ------->
+ *
+ */
+// This is sound because we push onto the stack x than pop x, equivalent of doing nothing
+int simplify_push_pop(CODE **c)
+{
+  if (is_simplepush(*c) && is_pop(next(*c))) {
+     return replace(c, 2, NULL);
+  }
+  return 0;
+}
+
+
+
 void init_patterns(void) {
 	ADD_PATTERN(simplify_multiplication_right);
 	ADD_PATTERN(simplify_astore);
 	ADD_PATTERN(positive_increment);
 	ADD_PATTERN(simplify_goto_goto);
+	ADD_PATTERN(simplify_push_pop);
 }
