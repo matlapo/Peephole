@@ -10,6 +10,8 @@
  * email: hendren@cs.mcgill.ca, mis@brics.dk
  */
 
+extern void abort (void) __THROW __attribute__ ((__noreturn__));
+
 /* iload x        iload x        iload x
  * ldc 0          ldc 1          ldc 2
  * imul           imul           imul
@@ -91,6 +93,72 @@ int simplify_goto_goto(CODE **c)
      return replace(c,1,makeCODEgoto(l2,NULL));
   }
   return 0;
+}
+
+/***********************************/
+/******** HELPER FUNCTIONS *********/
+/***********************************/
+
+CODE *makeCODEif(CODE *previous_if, int label, CODE *next)
+{
+  int l;
+  if (is_if_acmpeq(previous_if, &l))
+    return makeCODEif_acmpeq(label, next);
+  if (is_if_acmpne(previous_if, &l))
+    return makeCODEif_acmpne(label, next);
+  if (is_if_icmpeq(previous_if, &l))
+    return makeCODEif_icmpeq(label, next);
+  if (is_if_icmpge(previous_if, &l))
+    return makeCODEif_icmpge(label, next);
+  if (is_if_icmpgt(previous_if, &l))
+    return makeCODEif_icmpgt(label, next);
+  if (is_if_icmple(previous_if, &l))
+    return makeCODEif_icmple(label, next);
+  if (is_if_icmplt(previous_if, &l))
+    return makeCODEif_icmplt(label, next);
+  if (is_if_icmpne(previous_if, &l))
+    return makeCODEif_icmpne(label, next);
+  if (is_ifeq(previous_if, &l))
+    return makeCODEifeq(label, next);
+  if (is_ifne(previous_if, &l))
+    return makeCODEifne(label, next);
+  if (is_ifnonnull(previous_if, &l))
+    return makeCODEifnonnull(label, next);
+  if (is_ifnull(previous_if, &l))
+    return makeCODEifnull(label, next);
+  
+  abort();
+}
+
+CODE *makeCODEif_not(CODE *previous_if, int label, CODE *next)
+{
+  int l;
+  if (is_if_acmpeq(previous_if, &l))
+    return makeCODEif_acmpne(label, next);
+  if (is_if_acmpne(previous_if, &l))
+    return makeCODEif_acmpeq(label, next);
+  if (is_if_icmpeq(previous_if, &l))
+    return makeCODEif_icmpne(label, next);
+  if (is_if_icmpge(previous_if, &l))
+    return makeCODEif_icmplt(label, next);
+  if (is_if_icmpgt(previous_if, &l))
+    return makeCODEif_icmple(label, next);
+  if (is_if_icmple(previous_if, &l))
+    return makeCODEif_icmpgt(label, next);
+  if (is_if_icmplt(previous_if, &l))
+    return makeCODEif_icmpge(label, next);
+  if (is_if_icmpne(previous_if, &l))
+    return makeCODEif_icmpeq(label, next);
+  if (is_ifeq(previous_if, &l))
+    return makeCODEifne(label, next);
+  if (is_ifne(previous_if, &l))
+    return makeCODEifeq(label, next);
+  if (is_ifnonnull(previous_if, &l))
+    return makeCODEifnull(label, next);
+  if (is_ifnull(previous_if, &l))
+    return makeCODEifnonnull(label, next);
+  
+  abort();
 }
 
 /***********************************/
@@ -706,6 +774,122 @@ int duplicate_store(CODE **c) {
   return 0;
 }
 
+/*
+ * if_* L1
+ * iconst_0
+ * goto L2
+ * L1:
+ * iconst_1
+ * L2:
+ * ifeq L3
+ * ------>
+ * if_* L3
+ */
+int simplify_local_branching_01eq(CODE **c) {
+  int l1, l2, l3, l4, l5, k1, k2;
+  if (
+    is_if(c, &l1) && uniquelabel(l1) &&
+    is_ldc_int(nextby(*c, 1), &k1) && k1 == 0 &&
+    is_goto(nextby(*c, 2), &l2) && uniquelabel(l2) &&
+    is_label(nextby(*c, 3), &l3) && l3 == l1 &&
+    is_ldc_int(nextby(*c, 4), &k2) && k2 == 1 &&
+    is_label(nextby(*c, 5), &l4) && l4 == l2 &&
+    is_ifeq(nextby(*c, 6), &l5)
+  ) {
+    droplabel(l1);
+    droplabel(l3);
+    return replace(c, 7, makeCODEif_not(*c, l5, NULL));
+  }
+  return 0;
+}
+
+/*
+ * if_* L1
+ * iconst_0
+ * goto L2
+ * L1:
+ * iconst_1
+ * L2:
+ * ifne L3
+ * ------>
+ * if_* L3
+ */
+int simplify_local_branching_01ne(CODE **c) {
+  int l1, l2, l3, l4, l5, k1, k2;
+  if (
+    is_if(c, &l1) && uniquelabel(l1) &&
+    is_ldc_int(nextby(*c, 1), &k1) && k1 == 0 &&
+    is_goto(nextby(*c, 2), &l2) && uniquelabel(l2) &&
+    is_label(nextby(*c, 3), &l3) && l3 == l1 &&
+    is_ldc_int(nextby(*c, 4), &k2) && k2 == 1 &&
+    is_label(nextby(*c, 5), &l4) && l4 == l2 &&
+    is_ifne(nextby(*c, 6), &l5)
+  ) {
+    droplabel(l1);
+    droplabel(l3);
+    return replace_modified(c, 7, makeCODEif(*c, l5, NULL));
+  }
+  return 0;
+}
+
+/*
+ * if_* L1
+ * iconst_1
+ * goto L2
+ * L1:
+ * iconst_0
+ * L2:
+ * ifeq L3
+ * ------>
+ * if_* L3
+ */
+int simplify_local_branching_10eq(CODE **c) {
+  int l1, l2, l3, l4, l5, k1, k2;
+  if (
+    is_if(c, &l1) && uniquelabel(l1) &&
+    is_ldc_int(nextby(*c, 1), &k1) && k1 == 1 &&
+    is_goto(nextby(*c, 2), &l2) && uniquelabel(l2) &&
+    is_label(nextby(*c, 3), &l3) && l3 == l1 &&
+    is_ldc_int(nextby(*c, 4), &k2) && k2 == 0 &&
+    is_label(nextby(*c, 5), &l4) && l4 == l2 &&
+    is_ifeq(nextby(*c, 6), &l5)
+  ) {
+    droplabel(l1);
+    droplabel(l3);
+    return replace_modified(c, 7, makeCODEif(*c, l5, NULL));
+  }
+  return 0;
+}
+
+/*
+ * if_* L1
+ * iconst_1
+ * goto L2
+ * L1:
+ * iconst_0
+ * L2:
+ * ifne L3
+ * ------>
+ * if_* L3
+ */
+int simplify_local_branching_10ne(CODE **c) {
+  int l1, l2, l3, l4, l5, k1, k2;
+  if (
+    is_if(c, &l1) && uniquelabel(l1) &&
+    is_ldc_int(nextby(*c, 1), &k1) && k1 == 1 &&
+    is_goto(nextby(*c, 2), &l2) && uniquelabel(l2) &&
+    is_label(nextby(*c, 3), &l3) && l3 == l1 &&
+    is_ldc_int(nextby(*c, 4), &k2) && k2 == 0 &&
+    is_label(nextby(*c, 5), &l4) && l4 == l2 &&
+    is_ifne(nextby(*c, 6), &l5)
+  ) {
+    droplabel(l1);
+    droplabel(l3);
+    return replace_modified(c, 7, makeCODEif_not(*c, l5, NULL));
+  }
+  return 0;
+}
+
 void init_patterns(void) {
 	ADD_PATTERN(simplify_multiplication_right);
 	ADD_PATTERN(simplify_astore);
@@ -739,4 +923,8 @@ void init_patterns(void) {
   ADD_PATTERN(inverse_cmp);
   ADD_PATTERN(remove_deadcode);
   ADD_PATTERN(duplicate_store);
+  ADD_PATTERN(simplify_local_branching_01ne);
+  ADD_PATTERN(simplify_local_branching_01eq);
+  ADD_PATTERN(simplify_local_branching_10ne);
+  ADD_PATTERN(simplify_local_branching_10eq);
 }
