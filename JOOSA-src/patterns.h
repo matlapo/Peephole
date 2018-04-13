@@ -10,8 +10,6 @@
  * email: hendren@cs.mcgill.ca, mis@brics.dk
  */
 
-extern void abort (void) __THROW __attribute__ ((__noreturn__));
-
 /* iload x        iload x        iload x
  * ldc 0          ldc 1          ldc 2
  * imul           imul           imul
@@ -126,8 +124,8 @@ CODE *makeCODEif(CODE *previous_if, int label, CODE *next)
     return makeCODEifnonnull(label, next);
   if (is_ifnull(previous_if, &l))
     return makeCODEifnull(label, next);
-  
-  abort();
+
+  return NULL;
 }
 
 CODE *makeCODEif_not(CODE *previous_if, int label, CODE *next)
@@ -157,8 +155,8 @@ CODE *makeCODEif_not(CODE *previous_if, int label, CODE *next)
     return makeCODEifnull(label, next);
   if (is_ifnull(previous_if, &l))
     return makeCODEifnonnull(label, next);
-  
-  abort();
+
+  return NULL;
 }
 
 /***********************************/
@@ -549,6 +547,77 @@ int remove_unecessary_ifeq2(CODE **c)
 }
 
 /*
+ * if_* L1 // If true, add a 1 on the stack, add 0 otherwise
+ * iconst_0
+ * goto L2
+ * L1:
+ * iconst_1
+ * L2:
+ * dup
+ * ifeq L3 // If stack has 0, keep 0 to L3. Otherwise, pop the 1 and continue
+ * pop
+ * ...
+ * L3:
+ * ifeq L4 // If the jump is coming from L3, it will necessarily go to L4 since there is a 0 on the stack
+ * --------> If L1 and L2 are NOT unique
+ * [reverse if_*] L4
+ * L1:
+ * iconst_1
+ * L2:
+ * dup
+ * ifeq L3
+ * pop
+ * ...
+ * L3:
+ * ifeq L4
+ * --------> If L1 and L2 are unique
+ * [reverse if_*] L4
+ * ...
+ * L3:
+ * ifeq L4
+ * Soundness: this one is a bit complicated. I tried adding comments to the code to explain how it works. Also, if L1 and L2 are only referenced once, they are doing nothing since they add 1 to the stack, then removes duplicates it, then compare ifeq (which always fails) then pop to cancel the duplicate. Therefore, this code can be deleted since it makes no sence without the code we initially removed.
+ */
+int remove_unecessary_ifeq3(CODE **c)
+{
+  int l1_1, l1_2, l2_1, l2_2, l3, l4, x;
+
+  CODE* inst0 = *c;           /* if_* L1 */
+  CODE* inst1 = next(inst0);  /* iconst_0 */
+  CODE* inst2 = next(inst1);  /* goto L2 */
+  CODE* inst3 = next(inst2);  /* L1: */
+  CODE* inst4 = next(inst3);  /* iconst_1 */
+  CODE* inst5 = next(inst4);  /* L2: */
+  CODE* inst6 = next(inst5);  /* dup */
+  CODE* inst7 = next(inst6);  /* ifeq L3 */
+  CODE* inst8 = next(inst7);  /* pop */
+
+  if(is_if(c, &l1_1)
+  && is_ldc_int(inst1, &x) && x == 0
+  && is_goto(inst2, &l2_1)
+  && is_label(inst3, &l1_2)
+  && is_ldc_int(inst4, &x) && x == 1
+  && is_label(inst5, &l2_2)
+  && is_dup(inst6)
+  && is_ifeq(inst7, &l3)
+  && is_pop(inst8)
+  && is_ifeq(next(destination(l3)), &l4)
+  && l1_1 == l1_2 && l2_1 == l2_2) {
+    if (!uniquelabel(l1_1) || !uniquelabel(l2_2)) {
+      droplabel(l1_1);
+      droplabel(l2_1);
+      copylabel(l4);
+      return replace(c, 9, makeCODEif_not(*c, l4, makeCODElabel(l1_1, makeCODEldc_int(1, makeCODElabel(l2_1, makeCODEdup(makeCODEifeq(l3, makeCODEpop(NULL))))))));
+    } else {
+      deadlabel(l1_1);
+      deadlabel(l2_1);
+      copylabel(l4);
+      return replace(c, 9, makeCODEif_not(*c, l4, NULL));
+    }
+  }
+  return 0;
+}
+
+/*
  * iconst_1
  * ifne L1
  * -------->
@@ -814,10 +883,11 @@ int simplify_local_branching_01eq(CODE **c) {
     is_label(nextby(*c, 3), &l3) && l3 == l1 &&
     is_ldc_int(nextby(*c, 4), &k2) && k2 == 1 &&
     is_label(nextby(*c, 5), &l4) && l4 == l2 &&
-    is_ifeq(nextby(*c, 6), &l5)
+    is_ifeq(nextby(*c, 6), &l5) &&
+    uniquelabel(l1) && uniquelabel(l2)
   ) {
-    droplabel(l1);
-    droplabel(l3);
+    deadlabel(l1);
+    deadlabel(l2);
     return replace(c, 7, makeCODEif_not(*c, l5, NULL));
   }
   return 0;
@@ -843,10 +913,11 @@ int simplify_local_branching_01ne(CODE **c) {
     is_label(nextby(*c, 3), &l3) && l3 == l1 &&
     is_ldc_int(nextby(*c, 4), &k2) && k2 == 1 &&
     is_label(nextby(*c, 5), &l4) && l4 == l2 &&
-    is_ifne(nextby(*c, 6), &l5)
+    is_ifne(nextby(*c, 6), &l5) &&
+    uniquelabel(l1) && uniquelabel(l2)
   ) {
-    droplabel(l1);
-    droplabel(l3);
+    deadlabel(l1);
+    deadlabel(l2);
     return replace_modified(c, 7, makeCODEif(*c, l5, NULL));
   }
   return 0;
@@ -872,10 +943,11 @@ int simplify_local_branching_10eq(CODE **c) {
     is_label(nextby(*c, 3), &l3) && l3 == l1 &&
     is_ldc_int(nextby(*c, 4), &k2) && k2 == 0 &&
     is_label(nextby(*c, 5), &l4) && l4 == l2 &&
-    is_ifeq(nextby(*c, 6), &l5)
+    is_ifeq(nextby(*c, 6), &l5) &&
+    uniquelabel(l1) && uniquelabel(l2)
   ) {
-    droplabel(l1);
-    droplabel(l3);
+    deadlabel(l1);
+    deadlabel(l2);
     return replace_modified(c, 7, makeCODEif(*c, l5, NULL));
   }
   return 0;
@@ -901,10 +973,11 @@ int simplify_local_branching_10ne(CODE **c) {
     is_label(nextby(*c, 3), &l3) && l3 == l1 &&
     is_ldc_int(nextby(*c, 4), &k2) && k2 == 0 &&
     is_label(nextby(*c, 5), &l4) && l4 == l2 &&
-    is_ifne(nextby(*c, 6), &l5)
+    is_ifne(nextby(*c, 6), &l5) &&
+    uniquelabel(l1) && uniquelabel(l2)
   ) {
-    droplabel(l1);
-    droplabel(l3);
+    deadlabel(l1);
+    deadlabel(l2);
     return replace_modified(c, 7, makeCODEif_not(*c, l5, NULL));
   }
   return 0;
@@ -937,6 +1010,7 @@ void init_patterns(void) {
   ADD_PATTERN(remove_unecessary_ldc_int2);
   ADD_PATTERN(remove_unecessary_ifeq);
   ADD_PATTERN(remove_unecessary_ifeq2);
+  ADD_PATTERN(remove_unecessary_ifeq3);
   ADD_PATTERN(remove_unecessary_ifne);
   ADD_PATTERN(remove_unecessary_ifne2);
   ADD_PATTERN(inline_return);
