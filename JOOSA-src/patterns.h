@@ -575,7 +575,7 @@ int remove_unecessary_ifeq2(CODE **c)
  * ...
  * L3:
  * ifeq L4
- * Soundness: this one is a bit complicated. I tried adding comments to the code to explain how it works. Also, if L1 and L2 are only referenced once, they are doing nothing since they add 1 to the stack, then removes duplicates it, then compare ifeq (which always fails) then pop to cancel the duplicate. Therefore, this code can be deleted since it makes no sence without the code we initially removed.
+ * Soundness: this one is a bit complicated. I tried adding comments to the code to explain how it works. Also, if L1 and L2 are only referenced once, we can remove them. They are doing nothing since they add 1 to the stack, then duplicates it, then compare ifeq (which always fails) then pop to cancel the duplicate. Therefore, this code can be deleted since it makes no sence without the code we initially removed.
  */
 int remove_unecessary_ifeq3(CODE **c)
 {
