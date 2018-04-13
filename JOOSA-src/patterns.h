@@ -625,11 +625,11 @@ int inline_return(CODE **c)
   return 0;
 }
 
-/* [if_cmpge, if_cmpgt, if_cmple, if_cmplt, if_cmpeq, if_cmpne, if_acmpeq, if_acmpne] L1
+/* [if_cmpge, if_cmpgt, if_cmple, if_cmplt, if_cmpeq, if_cmpne, if_acmpeq, if_acmpne, ifeq, ifne, ifnull, ifnonnull] L1
  * goto L2
  * L1:
  * ------->
- * [if_cmplt, if_cmple, if_cmpgt, if_cmpge, if_cmpne, if_cmpne, if_acmpne, if_acmpne] L2
+ * [if_cmplt, if_cmple, if_cmpgt, if_cmpge, if_cmpne, if_cmpne, if_acmpne, if_acmpne, ifne, ifeq, ifnonnull, ifnull] L2
  * L1:
  */
 int inverse_cmp(CODE **c) {
@@ -675,6 +675,26 @@ int inverse_cmp(CODE **c) {
   if (is_if_acmpne(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
     droplabel(l1);
     return replace(c, 2, makeCODEif_acmpeq(l2, NULL));
+  }
+  /* ifeq */
+  if (is_ifeq(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
+    droplabel(l1);
+    return replace(c, 2, makeCODEifne(l2, NULL));
+  }
+  /* ifne */
+  if (is_ifne(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
+    droplabel(l1);
+    return replace(c, 2, makeCODEifeq(l2, NULL));
+  }
+  /* ifnull */
+  if (is_ifnull(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
+    droplabel(l1);
+    return replace(c, 2, makeCODEifnonnull(l2, NULL));
+  }
+  /* ifnonnull */
+  if (is_ifnonnull(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
+    droplabel(l1);
+    return replace(c, 2, makeCODEifnull(l2, NULL));
   }
   return 0;
 }
