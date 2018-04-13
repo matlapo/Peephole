@@ -577,7 +577,7 @@ int remove_unecessary_ifeq2(CODE **c)
  * ifeq L4
  * Soundness: this one is a bit complicated. I tried adding comments to the code to explain how it works. Also, if L1 and L2 are only referenced once, we can remove them. They are doing nothing since they add 1 to the stack, then duplicates it, then compare ifeq (which always fails) then pop to cancel the duplicate. Therefore, this code can be deleted since it makes no sence without the code we initially removed.
  */
-int remove_unecessary_ifeq3(CODE **c)
+int remove_unecessary_if(CODE **c)
 {
   int l1_1, l1_2, l2_1, l2_2, l3, l4, x;
 
@@ -1102,7 +1102,7 @@ void init_patterns(void) {
   ADD_PATTERN(remove_unecessary_ldc_int2);
   ADD_PATTERN(remove_unecessary_ifeq);
   ADD_PATTERN(remove_unecessary_ifeq2);
-  ADD_PATTERN(remove_unecessary_ifeq3);
+  ADD_PATTERN(remove_unecessary_if);
   ADD_PATTERN(remove_unecessary_ifne);
   ADD_PATTERN(remove_unecessary_ifne2);
   ADD_PATTERN(inline_return);
