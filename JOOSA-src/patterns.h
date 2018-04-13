@@ -579,20 +579,22 @@ int remove_unecessary_ldc_int2(CODE **c)
 }
 
 /*
- * return
+ * [return, goto]
  * [not a label]
  * --------->
- * return
+ * [return, goto]
  */
 int remove_deadcode(CODE **c)
 {
-  int x;
+  int x, l;
   if (is_return(*c) && (*c)->next != NULL && !(is_label(next(*c), &x)))
     return replace(c, 2, makeCODEreturn(NULL));
   if (is_areturn(*c) && (*c)->next != NULL && !(is_label(next(*c), &x)))
     return replace(c, 2, makeCODEareturn(NULL));
   if (is_ireturn(*c) && (*c)->next != NULL && !(is_label(next(*c), &x)))
     return replace(c, 2, makeCODEireturn(NULL));
+  if (is_goto(*c, &l) && (*c)->next != NULL && !(is_label(next(*c), &x)))
+    return replace(c, 2, makeCODEgoto(l, NULL));
   return 0;
 }
 
