@@ -141,14 +141,14 @@ int simplify_if_goto(CODE **c)
   return 0;
 }
 
-/* aload x
+/* [iconst_x, aconst_null, ldc x, iload x, aload x, dup]
  * pop
  * -------->
  */
 /* Soundness: this is sound because we push onto the stack x than pop x, equivalent of doing nothing */
 int simplify_push_pop(CODE **c)
 {
-  if (is_simplepush(*c) && is_pop(next(*c)))
+  if ((is_simplepush(*c) || is_dup(*c)) && is_pop(next(*c)))
      return replace(c, 2, NULL);
   return 0;
 }
