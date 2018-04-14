@@ -85,7 +85,7 @@ int positive_increment(CODE **c)
  */
 int simplify_goto_goto(CODE **c)
 { int l1,l2;
-  if (is_goto(*c,&l1) && is_goto(next(destination(l1)),&l2) && l1>l2) {
+  if (is_goto(*c,&l1) && is_goto(next(destination(l1)),&l2)) {
      droplabel(l1);
      copylabel(l2);
      return replace(c,1,makeCODEgoto(l2,NULL));
@@ -212,7 +212,7 @@ int replace2(CODE **c, int k, CODE *r)
  */
 int simplify_if_goto(CODE **c) {
   int l1,l2;
-  if (is_if(c, &l1) && is_goto(next(destination(l1)), &l2) && l1>l2) {
+  if (is_if(c, &l1) && is_goto(next(destination(l1)), &l2)) {
     return replace2(c, 1, makeCODEif(*c, l2, NULL));
   }
   return 0;
