@@ -957,6 +957,21 @@ int simplify_local_branching_10ne(CODE **c) {
 }
 
 /*
+ * aconst_null
+ * [if_acmpeq, if_acmpne] L
+ * ------>
+ * [ifnull, ifnonnull] L
+ */
+int collapse_if_null(CODE **c) {
+  int l;
+  if (is_aconst_null(*c) && is_if_acmpeq(next(*c), &l))
+    return replace2(c, 2, makeCODEifnull(l, NULL));
+  if (is_aconst_null(*c) && is_if_acmpne(next(*c), &l))
+    return replace2(c, 2, makeCODEifnonnull(l, NULL));
+  return 0;
+}
+
+/*
  * dup
  * astore x
  * dup
@@ -1005,4 +1020,5 @@ void init_patterns(void) {
   ADD_PATTERN(simplify_local_branching_01eq);
   ADD_PATTERN(simplify_local_branching_10ne);
   ADD_PATTERN(simplify_local_branching_10eq);
+  ADD_PATTERN(collapse_if_null);
 }
