@@ -1015,24 +1015,24 @@ int store_before_return(CODE **c) {
 }
 
 /*
- * if_* L1
+ * (if_eq, if_ne) L1
  * ...
  * L1:
  * dup
- * if_* L2
+ * (if_eq, if_ne) L2
  * pop
  * ...
  * L2:
- * [inverse if_*] L3
+ * (if_ne, if_eq) L3
  * ------->
- * if_* L2 <- Only changing the end label
+ * (if_eq, if_ne) L2 <- Only changing the end label
  * ...
  * L1:
  * dup
- * if_* L2
+ * (if_eq, if_ne) L2
  * ...
  * L2:
- * [inverse if_*] L3
+ * (if_ne, if_eq) L3
  */
 int remove_unecessary_jump(CODE **c)
 {
@@ -1053,7 +1053,91 @@ int remove_unecessary_jump(CODE **c)
 }
 
 /*
- * ifeq L1
+ * dup
+ * (if_eq, if_ne) L1
+ * pop
+ * ...
+ * L1:
+ * dup
+ * (if_eq, if_ne) L2
+ * pop
+ * ...
+ * L2:
+ * (if_eq, if_ne) L3
+ * ------->
+ * dup
+ * (if_eq, if_ne) L3 <- Only changing the end label
+ * pop
+ * ...
+ * L1:
+ * dup
+ * (if_eq, if_ne) L2
+ * ...
+ * L2:
+ * (if_eq, if_ne) L3
+ */
+int remove_unecessary_jump2(CODE **c)
+{
+  int l1, l2, l3;
+  if(is_dup(*c)
+  && is_ifne(next(*c), &l1)
+  && is_pop(next(next(*c)))
+  && is_dup(next(destination(l1)))
+  && is_ifne(next(next(destination(l1))), &l2)
+  && is_ifne(next(destination(l2)), &l3)) {
+    return replace2(c, 3, makeCODEifne(l3, NULL));
+  }
+  if(is_dup(*c)
+  && is_ifeq(next(*c), &l1)
+  && is_pop(next(next(*c)))
+  && is_dup(next(destination(l1)))
+  && is_ifeq(next(next(destination(l1))), &l2)
+  && is_ifeq(next(destination(l2)), &l3)) {
+    return replace2(c, 3, makeCODEifeq(l3, NULL));
+  }
+  return 0;
+}
+
+/*
+ * (if_eq, if_ne) L1
+ * ...
+ * L1:
+ * dup
+ * (if_eq, if_ne) L2
+ * pop
+ * ...
+ * L2:
+ * .return
+ * ------->
+ * (if_eq, if_ne) L2 <- Only changing the end label
+ * ...
+ * L1:
+ * dup
+ * (if_eq, if_ne) L2
+ * ...
+ * L2:
+ * .return
+ */
+int remove_unecessary_jump3(CODE **c)
+{
+  int l1, l2;
+  if(is_ifne(*c, &l1)
+  && is_dup(next(destination(l1)))
+  && is_ifne(next(next(destination(l1))), &l2)
+  && (is_return(next(destination(l2))) || is_areturn(next(destination(l2))) || is_ireturn(next(destination(l2))))) {
+    return replace2(c, 1, makeCODEifne(l2, NULL));
+  }
+  if(is_ifeq(*c, &l1)
+  && is_dup(next(destination(l1)))
+  && is_ifeq(next(next(destination(l1))), &l2)
+  && (is_return(next(destination(l2))) || is_areturn(next(destination(l2))) || is_ireturn(next(destination(l2))))) {
+    return replace2(c, 1, makeCODEifeq(l2, NULL));
+  }
+  return 0;
+}
+
+/*
+ * if_* L1 // If of one operand only
  * iconst_0
  * goto L2
  * L1:
@@ -1068,13 +1152,13 @@ int remove_unecessary_jump(CODE **c)
  * ----> // If L1 and L2 are unique
  * iconst_1
  * swap
- * ifeq L3
+ * if_* L3
  * pop
  * ...
  * L3:
  * ifeq L4
  */
-int simplify_indirect_fallthrough_jump(CODE **c)
+int simplify_if_else3(CODE **c)
 {
   int l1_1, l1_2, l2_1, l2_2, l3, l4, x;
 
@@ -1103,6 +1187,72 @@ int simplify_indirect_fallthrough_jump(CODE **c)
     // TODO: We could support the case where one of them is unique
     if (uniquelabel(l1_1) && uniquelabel(l2_2)) {
       return replace2(c, 9, makeCODEldc_int(1, makeCODEswap(makeCODEif(*c, l3, makeCODEpop(NULL)))));
+    }
+  }
+  return 0;
+}
+
+/*
+ * if_* L1 // If of one operand only
+ * iconst_0
+ * goto L2
+ * L1:
+ * iconst_1
+ * L2:
+ * dup
+ * ifne L3
+ * pop
+ * ...
+ * L3:
+ * ifne L4
+ * ----> // If L1 and L2 are NOT unique
+ * if_* L4
+ * L1:
+ * iconst_1
+ * L2:
+ * dup
+ * ifne L3
+ * pop
+ * ...
+ * L3:
+ * ifne L4
+ * ----> // If L1 and L2 are unique
+ * if_* L4
+ * ...
+ * L3:
+ * ifne L4
+ */
+int simplify_if_else4(CODE **c)
+{
+  int l1_1, l1_2, l2_1, l2_2, l3, l4, x;
+
+  CODE* inst0 = *c;           /* if_* L1 */
+  CODE* inst1 = next(inst0);  /* iconst_0 */
+  CODE* inst2 = next(inst1);  /* goto L2 */
+  CODE* inst3 = next(inst2);  /* L1: */
+  CODE* inst4 = next(inst3);  /* iconst_1 */
+  CODE* inst5 = next(inst4);  /* L2: */
+  CODE* inst6 = next(inst5);  /* dup */
+  CODE* inst7 = next(inst6);  /* ifne L3 */
+  CODE* inst8 = next(inst7);  /* pop */
+
+  if(is_if(c, &l1_1)
+  && is_ldc_int(inst1, &x) && x == 0
+  && is_goto(inst2, &l2_1)
+  && is_label(inst3, &l1_2)
+  && is_ldc_int(inst4, &x) && x == 1
+  && is_label(inst5, &l2_2)
+  && is_dup(inst6)
+  && is_ifne(inst7, &l3)
+  && is_pop(inst8)
+  && is_ifne(next(destination(l3)), &l4)
+  && l1_1 == l1_2 && l2_1 == l2_2
+  && (is_ifeq(*c, &l1_1) || is_ifne(*c, &l1_1) || is_ifnull(*c, &l1_1) || is_ifnonnull(*c, &l1_1))) {
+    // TODO: We could support the case where one of them is unique
+    if (uniquelabel(l1_1) && uniquelabel(l2_2)) {
+      return replace2(c, 9, makeCODEif(*c, l4, makeCODEpop(NULL)));
+    } else {
+      return replace2(c, 9, makeCODEif(*c, l4, makeCODElabel(l1_1, makeCODEldc_int(1, makeCODElabel(l2_1, makeCODEdup(makeCODEifne(l3, makeCODEpop(NULL))))))));
     }
   }
   return 0;
@@ -1207,8 +1357,9 @@ void init_patterns(void) {
   ADD_PATTERN(remove_unecessary_ifeq2);
   ADD_PATTERN(simplify_if_else);
   ADD_PATTERN(simplify_if_else2);
+  ADD_PATTERN(simplify_if_else3);
+  ADD_PATTERN(simplify_if_else4); /* Not used anywhere */
   ADD_PATTERN(remove_unecessary_ifne);
-  ADD_PATTERN(simplify_indirect_fallthrough_jump);
   ADD_PATTERN(remove_unecessary_ifne2);
   ADD_PATTERN(inline_return);
   ADD_PATTERN(inverse_cmp);
@@ -1223,4 +1374,6 @@ void init_patterns(void) {
   ADD_PATTERN(remove_unecessary_swap);
   ADD_PATTERN(store_before_return);
   ADD_PATTERN(remove_unecessary_jump);
+  ADD_PATTERN(remove_unecessary_jump2);
+  ADD_PATTERN(remove_unecessary_jump3);
 }
