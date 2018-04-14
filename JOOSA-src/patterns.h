@@ -1027,6 +1027,30 @@ int remove_unecessary_swap(CODE **c) {
 }
 
 /*
+ * store x
+ * [not if, not goto, not load x]*
+ * return
+ * ------>
+ * pop
+ * [not if, not goto, not load x]*
+ * return
+ */
+int store_before_return(CODE **c) {
+  int x1;
+  if (is_astore(*c, &x1) || is_istore(*c, &x1)) {
+    CODE *p;
+    for (p = *c; p != NULL; p = p->next) {
+      int l, x2;
+      if (is_if(&p, &l) || is_goto(p, &l) || (is_aload(p, &x2) && x1 == x2) || (is_iload(p, &x2) && x1 == x2)) break;
+
+      if (is_return(p) || is_areturn(p) || is_ireturn(p))
+        return replace2(c, 1, makeCODEpop(NULL));
+    }
+  }
+  return 0;
+}
+
+/*
  * dup
  * astore x
  * dup
@@ -1078,4 +1102,5 @@ void init_patterns(void) {
   ADD_PATTERN(collapse_if_null);
   ADD_PATTERN(putfield_dup_pop);
   ADD_PATTERN(remove_unecessary_swap);
+  ADD_PATTERN(store_before_return);
 }
