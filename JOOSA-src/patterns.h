@@ -1090,6 +1090,52 @@ int store_before_return(CODE **c) {
 }
 
 /*
+ * iconst k (k = 0)
+ * goto L1
+ * ...
+ * L1:
+ * dup
+ * ifeq L2
+ * ------>
+ * iconst k
+ * goto L2
+ * ...
+ * L1:
+ * dup
+ * ifeq L2
+ * 
+ * 
+ * 
+ * iconst k (k != 0)
+ * goto L1
+ * ...
+ * L1:
+ * dup
+ * ifne
+ * ------>
+ * iconst k
+ * goto L2
+ * ...
+ * L1:
+ * dup
+ * ifne L2
+ */
+int const_goto_if_dup(CODE **c) {
+  int l1, l2, k;
+  if (
+    is_ldc_int(*c, &k) &&
+    is_goto(next(*c), &l1) &&
+    is_dup(next(destination(l1)))
+  ) {
+    if (is_ifeq(nextby(destination(l1), 2), &l2) && k == 0)
+      return replace2(c, 2, makeCODEldc_int(k, makeCODEgoto(l2, NULL)));
+    if (is_ifne(nextby(destination(l1), 2), &l2) && k != 0)
+      return replace2(c, 2, makeCODEldc_int(k, makeCODEgoto(l2, NULL)));
+  }
+  return 0;
+}
+
+/*
  * dup
  * astore x
  * dup
@@ -1143,4 +1189,5 @@ void init_patterns(void) {
   ADD_PATTERN(putfield_dup_pop);
   ADD_PATTERN(remove_unecessary_swap);
   ADD_PATTERN(store_before_return);
+  ADD_PATTERN(const_goto_if_dup);
 }
