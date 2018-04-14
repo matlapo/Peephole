@@ -159,6 +159,24 @@ CODE *makeCODEif_not(CODE *previous_if, int label, CODE *next)
   return NULL;
 }
 
+CODE *makeCODEsimplepush(CODE *c, CODE *next)
+{
+  int i;
+  char* s;
+  if (is_aload(c, &i))
+    return makeCODEaload(i, next);
+  if (is_iload(c, &i))
+    return makeCODEiload(i, next);
+  if (is_ldc_int(c, &i))
+    return makeCODEldc_int(i, next);
+  if (is_ldc_string(c, &s))
+    return makeCODEldc_string(s, next);
+  if (is_aconst_null(c))
+    return makeCODEaconst_null(next);
+
+  return NULL;
+}
+
 /*  
  *  replace2 - replaces a sequence of instructions by another one
  *  Same as replace_modified but takes into account labels added in the replaced version of the code
@@ -973,6 +991,43 @@ int collapse_if_null(CODE **c) {
 
 /*
  * dup
+ * aload k
+ * swap
+ * putfield
+ * pop
+ * ------>
+ * aload k
+ * swap
+ * putfield
+ */
+int putfield_dup_pop(CODE **c) {
+  int k;
+  char* f;
+  if(
+    is_dup(*c) &&
+    is_aload(next(*c), &k) &&
+    is_swap(nextby(*c, 2)) &&
+    is_putfield(nextby(*c, 3), &f) &&
+    is_pop(nextby(*c, 4))
+  ) {
+    return replace2(c, 5, makeCODEaload(k, makeCODEswap(makeCODEputfield(f, NULL))));
+  }
+  return 0;
+}
+
+int remove_unecessary_swap(CODE **c) {
+  if (
+    is_simplepush(*c) &&
+    is_simplepush(next(*c)) &&
+    is_swap(nextby(*c, 2)) 
+  ) {
+    return replace2(c, 3, makeCODEsimplepush(next(*c), makeCODEsimplepush(*c, NULL)));
+  }
+  return 0;
+}
+
+/*
+ * dup
  * astore x
  * dup
  * ------->
@@ -1021,4 +1076,6 @@ void init_patterns(void) {
   ADD_PATTERN(simplify_local_branching_10ne);
   ADD_PATTERN(simplify_local_branching_10eq);
   ADD_PATTERN(collapse_if_null);
+  ADD_PATTERN(putfield_dup_pop);
+  ADD_PATTERN(remove_unecessary_swap);
 }
