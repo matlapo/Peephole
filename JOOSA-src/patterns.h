@@ -50,21 +50,60 @@ int simplify_astore(CODE **c)
   return 0;
 }
 
-/* iload x
- * ldc k   (0<=k<=127)
+/*
+ * iload x
+ * ldc k   (-128<=k<=127)
  * iadd
  * istore x
  * --------->
  * iinc x k
  */
-int positive_increment(CODE **c)
-{ int x,y,k;
-  if (is_iload(*c,&x) &&
-      is_ldc_int(next(*c),&k) &&
-      is_iadd(next(next(*c))) &&
-      is_istore(next(next(next(*c))),&y) &&
-      x==y && 0<=k && k<=127) {
-     return replace(c,4,makeCODEiinc(x,k,NULL));
+int positive_increment(CODE **c) {
+  int x1, x2, k;
+  if (
+    is_iload(*c, &x1) &&
+    is_ldc_int(next(*c), &k) &&
+    is_iadd(nextby(*c, 2)) &&
+    is_istore(nextby(*c, 3), &x2) &&
+    x1==x2 && -128<=k && k<=127
+  ) {
+    int bytes_taken = 0;
+    bytes_taken += (0 <= x1 && x1 <= 3) ? 1 : 2;
+    bytes_taken += (0 <= k && k <= 5) ? 1 : 2;
+    bytes_taken += 1;
+    bytes_taken += (0 <= x1 && x1 <= 3) ? 1 : 2;
+    
+    if (bytes_taken > 6)
+      return replace(c, 4, makeCODEiinc(x1, k, NULL));
+  }
+  return 0;
+}
+
+/*
+ * iload x
+ * ldc k   (-127<=k<=128)
+ * isub
+ * istore x
+ * --------->
+ * iinc x -k
+ */
+int negative_increment(CODE **c) {
+  int x1, x2, k;
+  if (
+    is_iload(*c, &x1) &&
+    is_ldc_int(next(*c), &k) &&
+    is_isub(nextby(*c, 2)) &&
+    is_istore(nextby(*c, 3), &x2) &&
+    x1==x2 && -127<=k && k<=128
+  ) {
+    int bytes_taken = 0;
+    bytes_taken += (0 <= x1 && x1 <= 3) ? 1 : 2;
+    bytes_taken += (0 <= k && k <= 5) ? 1 : 2;
+    bytes_taken += 1;
+    bytes_taken += (0 <= x1 && x1 <= 3) ? 1 : 2;
+    
+    if (bytes_taken > 6)
+      return replace(c, 4, makeCODEiinc(x1, -k, NULL));
   }
   return 0;
 }
@@ -1065,6 +1104,7 @@ void init_patterns(void) {
 	ADD_PATTERN(simplify_multiplication_right);
 	ADD_PATTERN(simplify_astore);
 	ADD_PATTERN(positive_increment);
+	ADD_PATTERN(negative_increment);
 	ADD_PATTERN(simplify_goto_goto);
 	ADD_PATTERN(simplify_if_goto);
 	ADD_PATTERN(simplify_push_pop);
