@@ -210,29 +210,10 @@ int replace2(CODE **c, int k, CODE *r)
  * ...
  * L2:    (reference count increased by 1)
  */
-int simplify_if_goto(CODE **c)
-{ int l1,l2;
-  CODE *d;
-  if (is_if(c,&l1) && is_goto(next(destination(l1)),&l2) && l1>l2) {
-    /* Change the label of the if no matter what type of if it is */
-    d = NEW(CODE);
-    d->kind = (*c)->kind;
-    d->visited = 0;
-    d->val.ifeqC = l2;
-    d->val.ifeqC = l2;
-    d->val.ifneC = l2;
-    d->val.if_acmpeqC = l2;
-    d->val.if_acmpneC = l2;
-    d->val.ifnullC = l2;
-    d->val.ifnonnullC = l2;
-    d->val.if_icmpeqC = l2;
-    d->val.if_icmpgtC = l2;
-    d->val.if_icmpltC = l2;
-    d->val.if_icmpleC = l2;
-    d->val.if_icmpgeC = l2;
-    d->val.if_icmpneC = l2;
-    d->next = NULL;
-    return replace2(c,1,d);
+int simplify_if_goto(CODE **c) {
+  int l1,l2;
+  if (is_if(c, &l1) && is_goto(next(destination(l1)), &l2) && l1>l2) {
+    return replace2(c, 1, makeCODEif(*c, l2, NULL));
   }
   return 0;
 }
@@ -464,27 +445,8 @@ int simplify_if_label(CODE **c)
 {
   int l1;
   int l2;
-  CODE *d;
   if (is_if(c, &l1) && is_label(next(destination(l1)), &l2)) {
-    /* Change the label of the if no matter what type of if it is */
-    d = NEW(CODE);
-    d->kind = (*c)->kind;
-    d->visited = 0;
-    d->val.ifeqC = l2;
-    d->val.ifeqC = l2;
-    d->val.ifneC = l2;
-    d->val.if_acmpeqC = l2;
-    d->val.if_acmpneC = l2;
-    d->val.ifnullC = l2;
-    d->val.ifnonnullC = l2;
-    d->val.if_icmpeqC = l2;
-    d->val.if_icmpgtC = l2;
-    d->val.if_icmpltC = l2;
-    d->val.if_icmpleC = l2;
-    d->val.if_icmpgeC = l2;
-    d->val.if_icmpneC = l2;
-    d->next = NULL;
-    return replace2(c, 1, d);
+    return replace2(c, 1, makeCODEif(*c, l2, NULL));
   }
   return 0;
 }
@@ -851,53 +813,8 @@ int inverse_cmp(CODE **c) {
   int l1;
   int l2;
   int l3;
-  /* if_cmpge */
-  if (is_if_icmpge(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEif_icmplt(l2, NULL));
-  }
-  /* if_cmpgt */
-  if (is_if_icmpgt(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEif_icmple(l2, NULL));
-  }
-  /* if_cmple */
-  if (is_if_icmple(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEif_icmpgt(l2, NULL));
-  }
-  /* if_cmplt */
-  if (is_if_icmplt(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEif_icmpge(l2, NULL));
-  }
-  /* if_cmpeq */
-  if (is_if_icmpeq(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEif_icmpne(l2, NULL));
-  }
-  /* if_cmpne */
-  if (is_if_icmpne(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEif_icmpeq(l2, NULL));
-  }
-  /* if_acmpeq */
-  if (is_if_acmpeq(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEif_acmpne(l2, NULL));
-  }
-  /* if_acmpne */
-  if (is_if_acmpne(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEif_acmpeq(l2, NULL));
-  }
-  /* ifeq */
-  if (is_ifeq(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEifne(l2, NULL));
-  }
-  /* ifne */
-  if (is_ifne(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEifeq(l2, NULL));
-  }
-  /* ifnull */
-  if (is_ifnull(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEifnonnull(l2, NULL));
-  }
-  /* ifnonnull */
-  if (is_ifnonnull(*c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
-    return replace2(c, 2, makeCODEifnull(l2, NULL));
+  if (is_if(c, &l1) && is_goto(next(*c), &l2) && is_label(next(next(*c)), &l3) && l1 == l3) {
+    return replace2(c, 2, makeCODEif_not(*c, l2, NULL));
   }
   return 0;
 }
