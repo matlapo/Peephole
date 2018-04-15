@@ -1321,7 +1321,7 @@ int simplify_if_else3(CODE **c)
   && is_ifeq(next(destination(l3)), &l4)
   && l1_1 == l1_2 && l2_1 == l2_2
   && (is_ifeq(*c, &l4) || is_ifne(*c, &l4) || is_ifnull(*c, &l4) || is_ifnonnull(*c, &l4))) {
-    // TODO: We could support the case where one of them is unique
+    /* TODO: We could support the case where one of them is unique */
     if (uniquelabel(l1_1) && uniquelabel(l2_2)) {
       return replace2(c, 9, makeCODEldc_int(1, makeCODEswap(makeCODEif(*c, l3, makeCODEpop(NULL)))));
     }
