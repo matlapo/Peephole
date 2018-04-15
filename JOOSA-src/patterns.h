@@ -361,40 +361,32 @@ int simplify_icmpne_with_0_loaded(CODE **c)
 }
 
 /*
- * 1load x
  * const_0
  * add
  * -------->
- * 1load x
  *
  * Soundness: Adding 0 to a number is the same as not doing anything
 */
 int simplify_add_0(CODE **c)
 {
-  int x = 0;
   int k = 0;
-  if (is_iload(*c, &x) && is_ldc_int(next(*c), &k) && k == 0 && is_iadd(next(next(*c))))
-    return replace2(c, 3, makeCODEiload(x, NULL));
+  if (is_ldc_int(*c, &k) && k == 0 && is_iadd(next(*c)))
+    return replace2(c, 2, NULL);
   return 0;
 }
 
 /*
- * iload x
  * const_1
  * imul
  * -------->
- * iload x
  *
  * Soundness: Multiplying a number by 1 is the same as not doing anything
 */
 int simplify_mul_1(CODE **c)
 {
-  int x = 0;
   int k = 0;
-  if (is_aload(*c, &x) && is_ldc_int(next(*c), &k) && k == 1 && is_imul(next(next(*c))))
-    return replace2(c, 3, makeCODEaload(x, NULL));
-  else if (is_iload(*c, &x) && is_ldc_int(next(*c), &k) && k == 1 && is_imul(next(next(*c))))
-      return replace2(c, 3, makeCODEiload(x, NULL));
+  if (is_ldc_int(*c, &k) && k == 1 && is_imul(next(*c)))
+    return replace2(c, 2, NULL);
   return 0;
 }
 
@@ -589,7 +581,7 @@ int remove_unecessary_ifeq(CODE **c)
 }
 
 /*
- * iconst x
+ * iconst x (x != 0)
  * ifeq L1
  * -------->
  *
@@ -781,35 +773,7 @@ int inverse_cmp(CODE **c) {
 }
 
 /*
- * iconst x
- * istore y
- * iconst x
- * istore z
- * ------>
- * iconst x
- * dup
- * istore y
- * istore z
- *
- * Soundness: In both cases, x will be stored in locals y and z and the pattern has no overall effect on the stack.
- */
-int duplicate_store(CODE **c) {
-  int x1;
-  int x2;
-  int y;
-  int z;
-  if (is_ldc_int(*c, &x1)
-  && is_istore(next(*c), &y)
-  && is_ldc_int(next(next(*c)), &x2)
-  && is_istore(next(next(next(*c))), &z)
-  && x1 == x2) {
-    return replace2(c, 4, makeCODEldc_int(x1, makeCODEdup(makeCODEistore(y, makeCODEistore(z, NULL)))));
-  }
-  return 0;
-}
-
-/*
- * if_* L1
+ * [if] L1
  * iconst_0
  * goto L2
  * L1:
@@ -817,9 +781,14 @@ int duplicate_store(CODE **c) {
  * L2:
  * ifeq L3
  * ------>
- * if_* L3
+ * [if inverted] L3
+ *
+ * Soundness: The first part of the code loads 0 or one on the stack depending on the result of an
+ * if instruction. Then, the ifeq branches based on wether there is a 0 of 1 in the stack. This is
+ * equivalent to simply branching (or not) to L3 in the first place. Due to the placement of the 0
+ * and 1 constants, the initial if instruction needs to be inverted.
  */
-int simplify_local_branching_01eq(CODE **c) {
+int simplify_branching_to_constants(CODE **c) {
   int l1, l2, l3, l4, l5, k1, k2;
   if (
     is_if(c, &l1) && uniquelabel(l1) &&
@@ -832,62 +801,6 @@ int simplify_local_branching_01eq(CODE **c) {
     uniquelabel(l1) && uniquelabel(l2)
   ) {
     return replace2(c, 7, makeCODEif_not(*c, l5, NULL));
-  }
-  return 0;
-}
-
-/*
- * if_* L1
- * iconst_0
- * goto L2
- * L1:
- * iconst_1
- * L2:
- * ifne L3
- * ------>
- * if_* L3
- */
-int simplify_local_branching_01ne(CODE **c) {
-  int l1, l2, l3, l4, l5, k1, k2;
-  if (
-    is_if(c, &l1) && uniquelabel(l1) &&
-    is_ldc_int(nextby(*c, 1), &k1) && k1 == 0 &&
-    is_goto(nextby(*c, 2), &l2) && uniquelabel(l2) &&
-    is_label(nextby(*c, 3), &l3) && l3 == l1 &&
-    is_ldc_int(nextby(*c, 4), &k2) && k2 == 1 &&
-    is_label(nextby(*c, 5), &l4) && l4 == l2 &&
-    is_ifne(nextby(*c, 6), &l5) &&
-    uniquelabel(l1) && uniquelabel(l2)
-  ) {
-    return replace2(c, 7, makeCODEif(*c, l5, NULL));
-  }
-  return 0;
-}
-
-/*
- * if_* L1
- * iconst_1
- * goto L2
- * L1:
- * iconst_0
- * L2:
- * ifeq L3
- * ------>
- * if_* L3
- */
-int simplify_local_branching_10eq(CODE **c) {
-  int l1, l2, l3, l4, l5, k1, k2;
-  if (
-    is_if(c, &l1) && uniquelabel(l1) &&
-    is_ldc_int(nextby(*c, 1), &k1) && k1 == 1 &&
-    is_goto(nextby(*c, 2), &l2) && uniquelabel(l2) &&
-    is_label(nextby(*c, 3), &l3) && l3 == l1 &&
-    is_ldc_int(nextby(*c, 4), &k2) && k2 == 0 &&
-    is_label(nextby(*c, 5), &l4) && l4 == l2 &&
-    is_ifeq(nextby(*c, 6), &l5) &&
-    uniquelabel(l1) && uniquelabel(l2)
-  ) {
-    return replace2(c, 7, makeCODEif(*c, l5, NULL));
   }
   return 0;
 }
@@ -1410,11 +1323,7 @@ void init_patterns(void) {
   ADD_PATTERN(inline_return);
   ADD_PATTERN(inverse_cmp);
   ADD_PATTERN(remove_deadcode);
-  ADD_PATTERN(duplicate_store);
-  ADD_PATTERN(simplify_local_branching_01ne);
-  ADD_PATTERN(simplify_local_branching_01eq);
-  ADD_PATTERN(simplify_local_branching_10ne);
-  ADD_PATTERN(simplify_local_branching_10eq);
+  ADD_PATTERN(simplify_branching_to_constants);
   ADD_PATTERN(collapse_if_null);
   ADD_PATTERN(putfield_dup_pop);
   ADD_PATTERN(remove_unecessary_swap);
