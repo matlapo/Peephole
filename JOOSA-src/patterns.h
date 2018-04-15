@@ -447,7 +447,7 @@ int simplify_unecessary_if(CODE **c) {
  * 
  * Soundness: Loading the same value twice is the same as loading it, then duplicating it. This applies to both aloads and iloads.
  */
-int simplify_double_aload(CODE **c)
+int simplify_double_load(CODE **c)
 {
   int x = 0;
   int y = 0;
@@ -469,7 +469,7 @@ int simplify_double_aload(CODE **c)
  * The dup is important, because the stack should contain the value that was stored at the end of this operation.
  * This applies to both iload/istore and aload/astore.
  */
-int simplify_istore_iload(CODE **c)
+int simplify_store_load(CODE **c)
 {
   int x = 0;
   int y = 0;
@@ -1403,10 +1403,8 @@ void init_patterns(void) {
   ADD_PATTERN(simplify_icmpne_with_0_loaded);
   ADD_PATTERN(simplify_unecessary_goto);
   ADD_PATTERN(simplify_unecessary_if);
-  ADD_PATTERN(simplify_double_aload);
-  ADD_PATTERN(simplify_double_iload);
-  ADD_PATTERN(simplify_astore_aload);
-  ADD_PATTERN(simplify_istore_iload);
+  ADD_PATTERN(simplify_double_load);
+  ADD_PATTERN(simplify_store_load);
   ADD_PATTERN(simplify_double_getfield);
   ADD_PATTERN(simplify_add_0);
   ADD_PATTERN(simplify_mul_1);
