@@ -361,11 +361,9 @@ int simplify_icmpne_with_0_loaded(CODE **c)
 }
 
 /*
- * 1load x
  * const_0
  * add
  * -------->
- * 1load x
  * 
  * Soundness: Adding 0 to a number is the same as not doing anything
 */
@@ -379,11 +377,9 @@ int simplify_add_0(CODE **c)
 }
 
 /*
- * iload x
  * const_1
  * imul
  * -------->
- * iload x
  * 
  * Soundness: Multiplying a number by 1 is the same as not doing anything
 */
