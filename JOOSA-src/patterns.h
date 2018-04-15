@@ -578,73 +578,6 @@ int remove_unecessary_ifeq2(CODE **c)
   return 0;
 }
 
-
-/* TODO: This one, but ifeq becomes ifne */
-/*
- * if_* L1 // If true, add a 1 on the stack, add 0 otherwise
- * iconst_0
- * goto L2
- * L1:
- * iconst_1
- * L2:
- * dup
- * ifeq L3 // If stack has 0, keep 0 to L3. Otherwise, pop the 1 and continue
- * pop
- * ...
- * L3:
- * ifeq L4 // If the jump is coming from L3, it will necessarily go to L4 since there is a 0 on the stack
- * --------> If L1 and L2 are NOT unique
- * [reverse if_*] L4
- * L1:
- * iconst_1
- * L2:
- * dup
- * ifeq L3
- * pop
- * ...
- * L3:
- * ifeq L4
- * --------> If L1 and L2 are unique
- * [reverse if_*] L4
- * ...
- * L3:
- * ifeq L4
- * Soundness: this one is a bit complicated. I tried adding comments to the code to explain how it works. Also, if L1 and L2 are only referenced once, we can remove them. They are doing nothing since they add 1 to the stack, then duplicates it, then compare ifeq (which always fails) then pop to cancel the duplicate. Therefore, this code can be deleted since it makes no sence without the code we initially removed.
- */
-int simplify_if_else(CODE **c)
-{
-  int l1_1, l1_2, l2_1, l2_2, l3, l4, x;
-
-  CODE* inst0 = *c;           /* if_* L1 */
-  CODE* inst1 = next(inst0);  /* iconst_0 */
-  CODE* inst2 = next(inst1);  /* goto L2 */
-  CODE* inst3 = next(inst2);  /* L1: */
-  CODE* inst4 = next(inst3);  /* iconst_1 */
-  CODE* inst5 = next(inst4);  /* L2: */
-  CODE* inst6 = next(inst5);  /* dup */
-  CODE* inst7 = next(inst6);  /* ifeq L3 */
-  CODE* inst8 = next(inst7);  /* pop */
-
-  if(is_if(c, &l1_1)
-  && is_ldc_int(inst1, &x) && x == 0
-  && is_goto(inst2, &l2_1)
-  && is_label(inst3, &l1_2)
-  && is_ldc_int(inst4, &x) && x == 1
-  && is_label(inst5, &l2_2)
-  && is_dup(inst6)
-  && is_ifeq(inst7, &l3)
-  && is_pop(inst8)
-  && is_ifeq(next(destination(l3)), &l4)
-  && l1_1 == l1_2 && l2_1 == l2_2) {
-    if (!uniquelabel(l1_1) || !uniquelabel(l2_2)) {
-      return replace2(c, 9, makeCODEif_not(*c, l4, makeCODElabel(l1_1, makeCODEldc_int(1, makeCODElabel(l2_1, makeCODEdup(makeCODEifeq(l3, makeCODEpop(NULL))))))));
-    } else {
-      return replace2(c, 9, makeCODEif_not(*c, l4, NULL));
-    }
-  }
-  return 0;
-}
-
 /*
  * iconst_1
  * ifne L1
@@ -1025,7 +958,7 @@ int store_before_return(CODE **c) {
  * L2:
  * (if_ne, if_eq) L3
  * ------->
- * (if_eq, if_ne) L2 <- Only changing the end label
+ * (if_eq, if_ne) L2 // We change the jump from L1 to L2 since we know for sure that if the if_eq/if_ne succeeded then the second one will succeed for sure (assuming they are the same comparison).
  * ...
  * L1:
  * dup
@@ -1033,16 +966,19 @@ int store_before_return(CODE **c) {
  * ...
  * L2:
  * (if_ne, if_eq) L3
+ * Soudness: this pattern does not reduce the size of the code, but formats it for simplify_if_else[1,2,3] patterns. It does so by removing unecessary jumps (see explanations in code).
  */
 int remove_unecessary_jump(CODE **c)
 {
   int l1, l2,l3;
+  /* Check if we have a ifne pair */
   if(is_ifne(*c, &l1)
   && is_dup(next(destination(l1)))
   && is_ifne(next(next(destination(l1))), &l2)
   && is_ifeq(next(destination(l2)), &l3)) {
     return replace2(c, 1, makeCODEifne(l2, NULL));
   }
+  /* Check if we have a ifeq pair */
   if(is_ifeq(*c, &l1)
   && is_dup(next(destination(l1)))
   && is_ifeq(next(next(destination(l1))), &l2)
@@ -1066,7 +1002,7 @@ int remove_unecessary_jump(CODE **c)
  * (if_eq, if_ne) L3
  * ------->
  * dup
- * (if_eq, if_ne) L3 <- Only changing the end label
+ * (if_eq, if_ne) L3 // We jump directly to L3 since we know that the comparison under L1 and L2 will succeed for sure (since they are all doing the same comparison ifne-ifne-ifne or ifeq-ifeq-ifeq). We can therefore directly jump to the end when the first comparison succeeded. The dup and pop needs to be there because we assume all the ifeq/ifne will use a duplication of the same value to do the comparison.
  * pop
  * ...
  * L1:
@@ -1075,10 +1011,12 @@ int remove_unecessary_jump(CODE **c)
  * ...
  * L2:
  * (if_eq, if_ne) L3
+ * Soudness: this pattern does not reduce the size of the code, but formats it for simplify_if_else[1,2,3] patterns. It does so by removing unecessary jumps (see explanations in code).
  */
 int remove_unecessary_jump2(CODE **c)
 {
   int l1, l2, l3;
+  /* For ifne-ifne-ifne pairs */
   if(is_dup(*c)
   && is_ifne(next(*c), &l1)
   && is_pop(next(next(*c)))
@@ -1087,6 +1025,7 @@ int remove_unecessary_jump2(CODE **c)
   && is_ifne(next(destination(l2)), &l3)) {
     return replace2(c, 3, makeCODEifne(l3, NULL));
   }
+  /* For ifeq-ifeq-ifeq pairs */
   if(is_dup(*c)
   && is_ifeq(next(*c), &l1)
   && is_pop(next(next(*c)))
@@ -1099,6 +1038,7 @@ int remove_unecessary_jump2(CODE **c)
 }
 
 /*
+ * dup
  * (if_eq, if_ne) L1
  * ...
  * L1:
@@ -1109,7 +1049,8 @@ int remove_unecessary_jump2(CODE **c)
  * L2:
  * .return
  * ------->
- * (if_eq, if_ne) L2 <- Only changing the end label
+ * dup
+ * (if_eq, if_ne) L2
  * ...
  * L1:
  * dup
@@ -1117,112 +1058,60 @@ int remove_unecessary_jump2(CODE **c)
  * ...
  * L2:
  * .return
+ * Soundness: same as remove_unecessary_jump2, but it's a return in the end
  */
 int remove_unecessary_jump3(CODE **c)
 {
   int l1, l2;
-  if(is_ifne(*c, &l1)
+  if(is_dup(*c)
+  && is_ifne(next(*c), &l1)
   && is_dup(next(destination(l1)))
   && is_ifne(next(next(destination(l1))), &l2)
   && (is_return(next(destination(l2))) || is_areturn(next(destination(l2))) || is_ireturn(next(destination(l2))))) {
-    return replace2(c, 1, makeCODEifne(l2, NULL));
+    return replace2(c, 2, makeCODEdup(makeCODEifne(l2, NULL)));
   }
-  if(is_ifeq(*c, &l1)
+  if(is_dup(*c)
+  && is_ifeq(*c, &l1)
   && is_dup(next(destination(l1)))
   && is_ifeq(next(next(destination(l1))), &l2)
   && (is_return(next(destination(l2))) || is_areturn(next(destination(l2))) || is_ireturn(next(destination(l2))))) {
-    return replace2(c, 1, makeCODEifeq(l2, NULL));
+    return replace2(c, 2, makeCODEdup(makeCODEifeq(l2, NULL)));
   }
   return 0;
 }
 
 /*
- * if_* L1 // If of one operand only
+ * if_* L1      // If true, add a 1 on the stack, add 0 otherwise
  * iconst_0
  * goto L2
  * L1:
  * iconst_1
+ * L2:          // Here, if the if_* branch succeeded, the stack contains 1 (else, 0)
+ * dup          // Copy the value that may be send to the code after label L3
+ * ifeq L3      // If 0, jump to L3 (and bring the duplicated value).
+ * pop          // If 1, pop the result that we won't be using
+ * ...          // The stack is EXACTLY the same as before if if_* thanks to the pop
+ * L3:
+ * ifeq L4      // If the jump is coming from the previous ifeq, it will necessarily go to L4 since there is a 0 on the stack
+ * --------> If L1 and L2 are NOT unique, we need to keep the code under L1 and L2
+ * [reverse if_*] L4 // Since we know that if the if_* fails, the code will fallthrough L4, we can use the inverse if and jump directly to L4
+ * L1:               // Since, in the original code, if the if_* succeeded it jumped to L1, then is it good that the inverse if_* goes to L1 if it failed
+ * iconst_1          // The remaining is unchanged code
  * L2:
  * dup
- * ifne L3
+ * ifeq L3
  * pop
  * ...
  * L3:
  * ifeq L4
- * ----> // If L1 and L2 are unique
- * iconst_1
- * swap
- * if_* L3
- * pop
+ * --------> If L1 and L2 are unique, we can delete the code under L1 and L2
+ * [reverse if_*] L4 // This instruction reproduces the behavior of the previous code. The difference is that it jumps directly to L4 instead of L3. It, therefore, does not need the code to put a 0 or a 1 on top of the stack.
  * ...
  * L3:
  * ifeq L4
+ * Soundness: this one is a bit complicated. I tried adding comments to the code to explain how it works and why it works. Also, if L1 and L2 are only referenced once, we can remove them. They are doing nothing since they add 1 to the stack, then duplicates it, then compare ifnethen pop to cancel the duplicate. Therefore, this code can be deleted since it makes no sence without the code we initially removed.
  */
-int simplify_if_else3(CODE **c)
-{
-  int l1_1, l1_2, l2_1, l2_2, l3, l4, x;
-
-  CODE* inst0 = *c;           /* ifeq L1 */
-  CODE* inst1 = next(inst0);  /* iconst_0 */
-  CODE* inst2 = next(inst1);  /* goto L2 */
-  CODE* inst3 = next(inst2);  /* L1: */
-  CODE* inst4 = next(inst3);  /* iconst_1 */
-  CODE* inst5 = next(inst4);  /* L2: */
-  CODE* inst6 = next(inst5);  /* dup */
-  CODE* inst7 = next(inst6);  /* ifne L3 */
-  CODE* inst8 = next(inst7);  /* pop */
-
-  if(is_if(c, &l1_1)
-  && is_ldc_int(inst1, &x) && x == 0
-  && is_goto(inst2, &l2_1)
-  && is_label(inst3, &l1_2)
-  && is_ldc_int(inst4, &x) && x == 1
-  && is_label(inst5, &l2_2)
-  && is_dup(inst6)
-  && is_ifne(inst7, &l3)
-  && is_pop(inst8)
-  && is_ifeq(next(destination(l3)), &l4)
-  && l1_1 == l1_2 && l2_1 == l2_2
-  && (is_ifeq(*c, &l4) || is_ifne(*c, &l4) || is_ifnull(*c, &l4) || is_ifnonnull(*c, &l4))) {
-    // TODO: We could support the case where one of them is unique
-    if (uniquelabel(l1_1) && uniquelabel(l2_2)) {
-      return replace2(c, 9, makeCODEldc_int(1, makeCODEswap(makeCODEif(*c, l3, makeCODEpop(NULL)))));
-    }
-  }
-  return 0;
-}
-
-/*
- * if_* L1 // If of one operand only
- * iconst_0
- * goto L2
- * L1:
- * iconst_1
- * L2:
- * dup
- * ifne L3
- * pop
- * ...
- * L3:
- * ifne L4
- * ----> // If L1 and L2 are NOT unique
- * if_* L4
- * L1:
- * iconst_1
- * L2:
- * dup
- * ifne L3
- * pop
- * ...
- * L3:
- * ifne L4
- * ----> // If L1 and L2 are unique
- * if_* L4
- * ...
- * L3:
- * ifne L4
- */
-int simplify_if_else4(CODE **c)
+int simplify_if_else(CODE **c)
 {
   int l1_1, l1_2, l2_1, l2_2, l3, l4, x;
 
@@ -1233,7 +1122,7 @@ int simplify_if_else4(CODE **c)
   CODE* inst4 = next(inst3);  /* iconst_1 */
   CODE* inst5 = next(inst4);  /* L2: */
   CODE* inst6 = next(inst5);  /* dup */
-  CODE* inst7 = next(inst6);  /* ifne L3 */
+  CODE* inst7 = next(inst6);  /* ifeq L3 */
   CODE* inst8 = next(inst7);  /* pop */
 
   if(is_if(c, &l1_1)
@@ -1243,44 +1132,43 @@ int simplify_if_else4(CODE **c)
   && is_ldc_int(inst4, &x) && x == 1
   && is_label(inst5, &l2_2)
   && is_dup(inst6)
-  && is_ifne(inst7, &l3)
+  && is_ifeq(inst7, &l3)
   && is_pop(inst8)
-  && is_ifne(next(destination(l3)), &l4)
-  && l1_1 == l1_2 && l2_1 == l2_2
-  && (is_ifeq(*c, &l1_1) || is_ifne(*c, &l1_1) || is_ifnull(*c, &l1_1) || is_ifnonnull(*c, &l1_1))) {
-    // TODO: We could support the case where one of them is unique
-    if (uniquelabel(l1_1) && uniquelabel(l2_2)) {
-      return replace2(c, 9, makeCODEif(*c, l4, makeCODEpop(NULL)));
+  && is_ifeq(next(destination(l3)), &l4)
+  && l1_1 == l1_2 && l2_1 == l2_2) {
+    if (!uniquelabel(l1_1) || !uniquelabel(l2_2)) {
+      return replace2(c, 9, makeCODEif_not(*c, l4, makeCODElabel(l1_1, makeCODEldc_int(1, makeCODElabel(l2_1, makeCODEdup(makeCODEifeq(l3, makeCODEpop(NULL))))))));
     } else {
-      return replace2(c, 9, makeCODEif(*c, l4, makeCODElabel(l1_1, makeCODEldc_int(1, makeCODElabel(l2_1, makeCODEdup(makeCODEifne(l3, makeCODEpop(NULL))))))));
+      return replace2(c, 9, makeCODEif_not(*c, l4, NULL));
     }
   }
   return 0;
 }
 
 /*
- * iconst x
- * if_.cmp* L1
- * iconst_0
+ * iconst x     // We need to keep track of the constant loading because we will put it at a different place in the final pattern
+ * if_.cmp* L1  // Any comparison of two elements
+ * iconst_0     // If the comparison failed, push 0 on stack
  * goto L2
  * L1:
- * iconst_1
+ * iconst_1     // If the comparison succeeded, push 1 on stack
  * L2:
- * dup
- * ifne L3
- * pop
+ * dup          // Copy the value that may be send to the code after label L3
+ * ifne L3      // If 1, jump to L3 (and bring the duplicated value).
+ * pop          // If 0, pop the result that we won't be using
+ * ...          // The stack is EXACTLY the same as before if if_.cmp* thanks to the pop
+ * L3:
+ * ifeq L4      // If the jump is coming from the previous ifne, we know the comparison will fail because 1 will be on the stack
+ * ---->        // If L1 and L2 are unique, we can remove the unused code under them since, in the end, the pattern does not affect the stack
+ * iconst_1     // We load a value of one that is going to be used to make the ifeq fail in case the if_.cmp* succeeds
+ * swap         // Swap to bring back the first value to compare with the if_.cmp*
+ * iconst x     // Add back the iconst we caugh in the pattern (first line of the original pattern). We needed to catch it to add the const_1 and swap before
+ * if_.cmp* L3  // Same comparison as in the original pattern. The only different is that we jump to L3 directly since we don't need to put a 0 or 1 anymore on the stack (the const_1 and swap takes care of that)
+ * pop          // Pop the iconst_1 added previously is not useful if we are not jumping to L3. The iconst_1 was only there in case we jump to L3 and needed to fail the ifeq (to respect the behavior of the original pattern)
  * ...
  * L3:
  * ifeq L4
- * ----> // If L1 and L2 are unique
- * iconst_1
- * swap
- * iconst x
- * if_.cmp* L3
- * pop
- * ...
- * L3:
- * ifeq L4
+ * Soundness: this is the most complicated pattern. I tried adding comments to the code to explain how it works and why it works. It is complicated because a value need to be inserted in the stack before the two operands of the comparison. Also, if L1 and L2 are only referenced once, we can remove them. They are doing nothing since they add 1 to the stack, then duplicates it, then compare ifne (which always fails) then pop to cancel the duplicate. Therefore, this code can be deleted since it makes no sence without the code we initially removed.
  */
 int simplify_if_else2(CODE **c)
 {
@@ -1311,6 +1199,63 @@ int simplify_if_else2(CODE **c)
   && l1_1 == l1_2 && l2_1 == l2_2) {
     if (uniquelabel(l1_1) && uniquelabel(l2_1)) {
       return replace2(c, 10, makeCODEldc_int(1, makeCODEswap(makeCODEldc_int(x, makeCODEif(inst1, l3, makeCODEpop(NULL))))));
+    }
+  }
+  return 0;
+}
+
+/* // Like simplify_if_else2, but for one operand comparators
+ * if_* L1       // If of one operand only (no cmp operartion)
+ * iconst_0      // Load 0 on the stack if comparison failed
+ * goto L2
+ * L1:
+ * iconst_1      // Load 1 on the stack if comparison succeeded
+ * L2:
+ * dup           // Copy the value that may be send to the code after label L3
+ * ifne L3       // If 1, jump to L3 (and bring the duplicated value).
+ * pop           // If 0, pop the result that we won't be using
+ * ...
+ * L3:
+ * ifeq L4       // If the jump is coming from the previous ifne, the comparison will always fail since 1 will be on the stack
+ * ----> // If L1 and L2 are unique, we can delete the code under L1 and L2
+ * iconst_1     // Load 1 into the stack (to be used to make the ifeq fail)
+ * swap         // Put the initial operand of the comparison back to the top
+ * if_* L3      // If success, jump directly to L3 then fail the ifeq thanks to the iconst_1 on the stack
+ * pop          // If failure, we are not jumping to L3, therefore the iconst_1 on the stack is not needed anymore
+ * ...
+ * L3:
+ * ifeq L4
+ * Soundness: this one is a bit complicated. I tried adding comments to the code to explain how it works and why it works. Also, if L1 and L2 are only referenced once, we can remove them. They are doing nothing since they add 1 to the stack, then duplicates it, then compare ifne then pop to cancel the duplicate. Therefore, this code can be deleted since it makes no sence without the code we initially removed.
+ */
+int simplify_if_else3(CODE **c)
+{
+  int l1_1, l1_2, l2_1, l2_2, l3, l4, x;
+
+  CODE* inst0 = *c;           /* ifeq L1 */
+  CODE* inst1 = next(inst0);  /* iconst_0 */
+  CODE* inst2 = next(inst1);  /* goto L2 */
+  CODE* inst3 = next(inst2);  /* L1: */
+  CODE* inst4 = next(inst3);  /* iconst_1 */
+  CODE* inst5 = next(inst4);  /* L2: */
+  CODE* inst6 = next(inst5);  /* dup */
+  CODE* inst7 = next(inst6);  /* ifne L3 */
+  CODE* inst8 = next(inst7);  /* pop */
+
+  if(is_if(c, &l1_1)
+  && is_ldc_int(inst1, &x) && x == 0
+  && is_goto(inst2, &l2_1)
+  && is_label(inst3, &l1_2)
+  && is_ldc_int(inst4, &x) && x == 1
+  && is_label(inst5, &l2_2)
+  && is_dup(inst6)
+  && is_ifne(inst7, &l3)
+  && is_pop(inst8)
+  && is_ifeq(next(destination(l3)), &l4)
+  && l1_1 == l1_2 && l2_1 == l2_2
+  && (is_ifeq(*c, &l4) || is_ifne(*c, &l4) || is_ifnull(*c, &l4) || is_ifnonnull(*c, &l4))) {
+    // TODO: We could support the case where one of them is unique
+    if (uniquelabel(l1_1) && uniquelabel(l2_2)) {
+      return replace2(c, 9, makeCODEldc_int(1, makeCODEswap(makeCODEif(*c, l3, makeCODEpop(NULL)))));
     }
   }
   return 0;
@@ -1404,7 +1349,6 @@ void init_patterns(void) {
   ADD_PATTERN(simplify_if_else);
   ADD_PATTERN(simplify_if_else2);
   ADD_PATTERN(simplify_if_else3);
-  ADD_PATTERN(simplify_if_else4); /* Not used anywhere */
   ADD_PATTERN(remove_unecessary_ifne);
   ADD_PATTERN(remove_unecessary_ifne2);
   ADD_PATTERN(inline_return);
