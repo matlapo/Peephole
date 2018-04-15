@@ -408,29 +408,6 @@ int simplify_unecessary_goto(CODE **c)
   return 0;
 }
 
-/* [if] L
- * L:
- * ...
- * -------->
- * [pop, pop pop]
- * L:
- *
- * Soundness: Wether or not the if branches, the following line will be executed next. One or two pops are needed instead of the if,
- * because ifs pop from the stack.
- */
-int simplify_unecessary_if(CODE **c) {
-  int l1, l2, inc, affected, used;
-  if (is_if(c, &l1) && is_label(next(*c), &l2) && l1 == l2) {
-    stack_effect(*c, &inc, &affected, &used);
-    if (inc == -1) {
-      return replace2(c, 2, makeCODEpop(makeCODElabel(l1, NULL)));
-    } else if (inc == -2) {
-      return replace2(c, 2, makeCODEpop(makeCODEpop(makeCODElabel(l1, NULL))));
-    }
-  }
-  return 0;
-}
-
 /* load x
  * load x
  * -------->
@@ -1301,7 +1278,6 @@ void init_patterns(void) {
   ADD_PATTERN(simplify_cmpeq_with_0_loaded);
   ADD_PATTERN(simplify_icmpne_with_0_loaded);
   ADD_PATTERN(simplify_unecessary_goto);
-  ADD_PATTERN(simplify_unecessary_if);
   ADD_PATTERN(simplify_double_load);
   ADD_PATTERN(simplify_store_load);
   ADD_PATTERN(simplify_double_getfield);
