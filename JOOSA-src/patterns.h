@@ -14,8 +14,10 @@
 /******** HELPER FUNCTIONS *********/
 /***********************************/
 
-CODE *makeCODEif(CODE *previous_if, int label, CODE *next)
-{
+/*
+ * Generates a copy of an existing if instruction
+ */
+CODE *makeCODEif(CODE *previous_if, int label, CODE *next) {
   int l;
   if (is_if_acmpeq(previous_if, &l))
     return makeCODEif_acmpeq(label, next);
@@ -45,8 +47,10 @@ CODE *makeCODEif(CODE *previous_if, int label, CODE *next)
   return NULL;
 }
 
-CODE *makeCODEif_not(CODE *previous_if, int label, CODE *next)
-{
+/*
+ * Generates an if statement that is the inverse of an existing if statement
+ */
+CODE *makeCODEif_not(CODE *previous_if, int label, CODE *next) {
   int l;
   if (is_if_acmpeq(previous_if, &l))
     return makeCODEif_acmpne(label, next);
@@ -76,6 +80,9 @@ CODE *makeCODEif_not(CODE *previous_if, int label, CODE *next)
   return NULL;
 }
 
+/*
+ * Generates a copy of a simplepush instruction
+ */
 CODE *makeCODEsimplepush(CODE *c, CODE *next)
 {
   int i;
@@ -95,8 +102,8 @@ CODE *makeCODEsimplepush(CODE *c, CODE *next)
 }
 
 /*
- *  replace2 - replaces a sequence of instructions by another one
- *  Same as replace_modified but takes into account labels added in the replaced version of the code
+ * replace2 - replaces a sequence of instructions by another one
+ * Same as replace_modified but takes into account labels added in the replaced version of the code
  */
 int replace2(CODE **c, int k, CODE *r)
 {
@@ -127,15 +134,19 @@ int replace2(CODE **c, int k, CODE *r)
   return 1;
 }
 
-/* iload x        iload x        iload x
+/*
+ * iload x        iload x        iload x
  * ldc 0          ldc 1          ldc 2
  * imul           imul           imul
  * ------>        ------>        ------>
  * ldc 0          iload x        iload x
  *                               dup
  *                               iadd
+ * 
+ * Soundness: Multiplication by 0 is the same as replacing a value by 0.
+ * Multiplication by 1 doesn't do anything.
+ * Multiplication by 2 is the same as adding a value to itself.
  */
-
 int simplify_multiplication_right(CODE **c)
 { int x,k;
   if (is_iload(*c,&x) &&
@@ -156,6 +167,9 @@ int simplify_multiplication_right(CODE **c)
  * pop
  * -------->
  * astore x
+ * 
+ * Soundness: There is no need to duplicate the value currently on the stack if we're going to pop it later anyways.
+ * In both cases, this stores the value currently on top of the stack.
  */
 int simplify_astore(CODE **c)
 { int x;
@@ -174,6 +188,8 @@ int simplify_astore(CODE **c)
  * istore x
  * --------->
  * iinc x k
+ * 
+ * Soundness: Adding a constant to a value is the same as using the builtin iinc instruction
  */
 int positive_increment(CODE **c) {
   int x1, x2, k;
@@ -203,6 +219,8 @@ int positive_increment(CODE **c) {
  * istore x
  * --------->
  * iinc x -k
+ * 
+ * Soundness: Substracting a constant from a value is the same as using the builtin iinc instruction
  */
 int negative_increment(CODE **c) {
   int x1, x2, k;
@@ -238,6 +256,9 @@ int negative_increment(CODE **c) {
  * goto L2
  * ...
  * L2:    (reference count increased by 1)
+ * 
+ * Soundness: Jumping to L1 and then to L2 is the same as going straight to L2.
+ * This potentially helps with dead label removal.
  */
 int simplify_goto_goto(CODE **c)
 { int l1,l2;
@@ -264,6 +285,10 @@ int simplify_goto_goto(CODE **c)
  * goto L2
  * ...
  * L2:    (reference count increased by 1)
+ * 
+ * Soundness: If the conditionnal branching happens, jumping to L1 and then to L2 is the same as going straight to L2.
+ * If the conditionnal branching does not happen, the label in the if doesn't matter.
+ * This potentially helps with dead label removal.
  */
 int simplify_if_goto(CODE **c) {
   int l1,l2;
@@ -276,10 +301,11 @@ int simplify_if_goto(CODE **c) {
 /* [iconst_x, aconst_null, ldc x, iload x, aload x, dup]
  * pop
  * -------->
+ * 
+ * Soundness: All the possibilities of first instruction have no side effect. Thus, pushing a value on the stack and
+ * popping it immediately doesn't change anything.
  */
-/* Soundness: this is sound because we push onto the stack x than pop x, equivalent of doing nothing */
-int simplify_push_pop(CODE **c)
-{
+int simplify_push_pop(CODE **c) {
   if ((is_simplepush(*c) || is_dup(*c)) && is_pop(next(*c)))
      return replace2(c, 2, NULL);
   return 0;
@@ -290,10 +316,11 @@ int simplify_push_pop(CODE **c)
  * pop
  * -------->
  * istore x
+ * 
+ * Soundness: The dup will allow keeping the current value onto the stack after the istore, but the pop discards it right after.
+ * Thus, we can simply remove the dup and the pop.
  */
-/* Soundness: istore operation already takes care of popping the stack */
-int simplify_dup_istore(CODE **c)
-{
+int simplify_dup_istore(CODE **c) {
   int x = 0;
   if (is_dup(*c) && is_istore(next(*c), &x) && is_pop(nextby(*c, 2)))
      return replace2(c, 3, makeCODEistore(x, NULL));
@@ -304,8 +331,9 @@ int simplify_dup_istore(CODE **c)
  * if_icmpeq L
  * -------->
  * ifeq L
+ * 
+ * Soundness: By definition, ifeq acts like if_icmpeq and compares the top of the stack to 0.
  */
- /* Soundness: ifeq already checks by default if it is 0, no need to load a const 0 */
 int simplify_cmpeq_with_0_loaded(CODE **c)
 {
   int x = 0;
@@ -320,8 +348,9 @@ int simplify_cmpeq_with_0_loaded(CODE **c)
  * if_icmpne L
  * -------->
  * ifne L
+ * 
+ * Soundness: Soundness: By definition, ifne acts like if_icmpne and compares the top of the stack to 0.
  */
- /* Soundness: same as above, but for cmpne */
 int simplify_icmpne_with_0_loaded(CODE **c)
 {
   int x = 0;
@@ -332,29 +361,31 @@ int simplify_icmpne_with_0_loaded(CODE **c)
 }
 
 /*
- * aload x or iload x
+ * 1load x
  * const_0
  * add
  * -------->
- * aload x or iload x
+ * 1load x
+ * 
+ * Soundness: Adding 0 to a number is the same as not doing anything
 */
 int simplify_add_0(CODE **c)
 {
   int x = 0;
   int k = 0;
-  if (is_aload(*c, &x) && is_ldc_int(next(*c), &k) && k == 0 && is_iadd(next(next(*c))))
-    return replace2(c, 3, makeCODEaload(x, NULL));
-  else if (is_iload(*c, &x) && is_ldc_int(next(*c), &k) && k == 0 && is_iadd(next(next(*c))))
+  if (is_iload(*c, &x) && is_ldc_int(next(*c), &k) && k == 0 && is_iadd(next(next(*c))))
     return replace2(c, 3, makeCODEiload(x, NULL));
   return 0;
 }
 
 /*
- * aload x or iload x
- * const_0
- * mul
+ * iload x
+ * const_1
+ * imul
  * -------->
- * aload x or iload x
+ * iload x
+ * 
+ * Soundness: Multiplying a number by 1 is the same as not doing anything
 */
 int simplify_mul_1(CODE **c)
 {
@@ -372,8 +403,10 @@ int simplify_mul_1(CODE **c)
  * ...
  * -------->
  * L:
+ * 
+ * Soundness: The goto is useless because it points to the next line. The program counter will naturally go to the
+ * next line anyways, which is the intended behavior.
  */
- /* Soundness: goto L followed directly by the label it refers is the same as the label itself */
 int simplify_unecessary_goto(CODE **c)
 {
   int x = 0;
@@ -387,23 +420,32 @@ int simplify_unecessary_goto(CODE **c)
  * L:
  * ...
  * -------->
+ * [pop, pop pop]
  * L:
+ * 
+ * Soundness: Wether or not the if branches, the following line will be executed next. One or two pops are needed instead of the if,
+ * because ifs pop from the stack.
  */
- /* Soundness: any if L followed directly by the label it refers is the same as the label itself */
-int simplify_unecessary_if(CODE **c)
-{
-  int x = 0;
-  int y = 0;
-  if (is_if(c, &x) && is_label(next(*c), &y) && x == y)
-    return replace2(c, 2, makeCODElabel(x, NULL));
+int simplify_unecessary_if(CODE **c) {
+  int l1, l2, inc, affected, used;
+  if (is_if(c, &l1) && is_label(next(*c), &l2) && l1 == l2) {
+    stack_effect(*c, &inc, &affected, &used);
+    if (inc == -1) {
+      return replace2(c, 2, makeCODEpop(makeCODElabel(l1, NULL)));
+    } else if (inc == -2) {
+      return replace2(c, 2, makeCODEpop(makeCODEpop(makeCODElabel(l1, NULL))));
+    }
+  }
   return 0;
 }
 
-/* aload x
- * aload x
+/* load x
+ * load x
  * -------->
- * aload x
+ * load x
  * dup
+ * 
+ * Soundness: Loading the same value twice is the same as loading it, then duplicating it. This applies to both aloads and iloads.
  */
 int simplify_double_aload(CODE **c)
 {
@@ -411,33 +453,21 @@ int simplify_double_aload(CODE **c)
   int y = 0;
   if (is_aload(*c, &x) && is_aload(next(*c), &y) && x == y)
     return replace2(c, 2, makeCODEaload(x, makeCODEdup(NULL)));
-  return 0;
-}
-
-/*
- * iload x
- * iload x
- * -------->
- * iload x
- * dup
-*/
-int simplify_double_iload(CODE **c)
-{
-  int x = 0;
-  int y = 0;
   if (is_iload(*c, &x) && is_iload(next(*c), &y) && x == y)
-    return replace2(c, 2, makeCODEiload(x,
-                         makeCODEdup(NULL)
-    ));
+    return replace2(c, 2, makeCODEiload(x, makeCODEdup(NULL)));
   return 0;
 }
 
 /*
- * istore x
- * iload x
+ * store x
+ * load x
  * ------>
  * dup
- * istore x
+ * store x
+ * 
+ * Soundness: Storing a value, then loading it back is the same as storing a copy of a value, then storing it.
+ * The dup is important, because the stack should contain the value that was stored at the end of this operation.
+ * This applies to both iload/istore and aload/astore.
  */
 int simplify_istore_iload(CODE **c)
 {
@@ -445,20 +475,6 @@ int simplify_istore_iload(CODE **c)
   int y = 0;
   if (is_istore(*c, &x) && is_iload(next(*c), &y) && x == y)
     return replace2(c, 2, makeCODEdup(makeCODEistore(x, NULL)));
-  return 0;
-}
-
-/*
- * astore x
- * aload x
- * ------>
- * dup
- * astore x
- */
-int simplify_astore_aload(CODE **c)
-{
-  int x = 0;
-  int y = 0;
   if (is_astore(*c, &x) && is_aload(next(*c), &y) && x == y)
     return replace2(c, 2, makeCODEdup(makeCODEastore(x, NULL)));
   return 0;
@@ -474,6 +490,8 @@ int simplify_astore_aload(CODE **c)
  * ...
  * L1:
  * L2:
+ * 
+ * Soundness: Since the labels are consecutive, it is equivalent to jump to the second label. This enables some dead label removal.
  */
 int simplify_goto_label(CODE **c)
 {
@@ -495,6 +513,8 @@ int simplify_goto_label(CODE **c)
  * ...
  * L1:
  * L2:
+ * 
+ * Soundness: Since the labels are consecutive, it is equivalent to branch to the second label. This enables some dead label removal.
  */
 int simplify_if_label(CODE **c)
 {
@@ -510,6 +530,7 @@ int simplify_if_label(CODE **c)
  * L:
  * --------->
  *
+ * Soundness: Since nothing points to this label, it can safely be removed.
  */
 int simplify_unecessary_label(CODE **c)
 {
@@ -528,7 +549,8 @@ int simplify_unecessary_label(CODE **c)
  * aload x
  * getfield y
  * dup
- * Soundess: same logic as double aload, but with an object field.
+ * 
+ * Soundess: Getting the value of a field twice is equivalent to getting it once and duplicating that value.
  */
 int simplify_double_getfield(CODE **c)
 {
@@ -552,6 +574,9 @@ int simplify_double_getfield(CODE **c)
  * ifeq L1
  * -------->
  * goto L1
+ * 
+ * Soundness: Since 0 will be on the stack when the ifeq gets executed, it will always jump to L1.
+ * This is equivalent to a goto instruction.
  */
 int remove_unecessary_ifeq(CODE **c)
 {
@@ -564,33 +589,37 @@ int remove_unecessary_ifeq(CODE **c)
 }
 
 /*
- * iconst_1
+ * iconst x
  * ifeq L1
  * -------->
+ * 
+ * Soundness: Since a non-zero will be on the stack when the ifeq gets executed, it will never jump to L1.
+ * This can thus be safely removed.
  */
 int remove_unecessary_ifeq2(CODE **c)
 {
   int x;
   int l1;
-  if (is_ldc_int(*c, &x) && x == 1 && is_ifeq(next(*c), &l1)) {
+  if (is_ldc_int(*c, &x) && x != 0 && is_ifeq(next(*c), &l1))
     return replace2(c, 2, NULL);
-  }
   return 0;
 }
 
 /*
- * iconst_1
+ * iconst x
  * ifne L1
  * -------->
  * goto L1
+ * 
+ * Soundness: Since a non-zero value will be on the stack when the ifeq gets executed, it will always jump to L1.
+ * This is equivalent to a goto instruction.
  */
 int remove_unecessary_ifne(CODE **c)
 {
   int x;
   int l1;
-  if (is_ldc_int(*c, &x) && is_ifne(next(*c), &l1) && x == 1){
+  if (is_ldc_int(*c, &x) && is_ifne(next(*c), &l1) && x != 0)
     return replace2(c, 2, makeCODEgoto(l1, NULL));
-  }
   return 0;
 }
 
@@ -598,6 +627,9 @@ int remove_unecessary_ifne(CODE **c)
  * iconst_0
  * ifne L1
  * -------->
+ * 
+ * Soundness: Since 0 will be on the stack when the ifeq gets executed, it will never jump to L1.
+ * This can thus be safely removed.
  */
 int remove_unecessary_ifne2(CODE **c)
 {
@@ -615,13 +647,14 @@ int remove_unecessary_ifne2(CODE **c)
  * iadd
  * -------->
  * iconst_1
+ * 
+ * Soundness: One plus zero will be 1, regardless.
  */
 int remove_one_plus_zero(CODE **c)
 {
   int x;
-  if (is_ldc_int(*c, &x) && x == 1 && is_ldc_int(*c, &x) && x == 0 && is_iadd(next(next(*c)))){
+  if (is_ldc_int(*c, &x) && x == 1 && is_ldc_int(*c, &x) && x == 0 && is_iadd(next(next(*c))))
     return replace2(c, 3, makeCODEldc_int(x, NULL));
-  }
   return 0;
 }
 
@@ -636,9 +669,11 @@ int remove_one_plus_zero(CODE **c)
  * ...
  * L1:
  * ifeq L2
+ * 
+ * Soundness: Since 0 will be on top of the stack, the ifeq instruction will jump to L2.
+ * Thus, we know we can already jump to L2 and remove the iconst_0
  */
-int remove_unecessary_ldc_int(CODE **c)
-{
+int remove_unecessary_ldc_int(CODE **c) {
   int x;
   int l1;
   int l2;
@@ -659,6 +694,9 @@ int remove_unecessary_ldc_int(CODE **c)
  * ...
  * L1:
  * ifne L2
+ * 
+ * Soundness: Since 1 will be on top of the stack, the ifne instruction will jump to L2.
+ * Thus, we know we can already jump to L2 and remove the iconst_0
  */
 int remove_unecessary_ldc_int2(CODE **c)
 {
@@ -676,9 +714,10 @@ int remove_unecessary_ldc_int2(CODE **c)
  * [not a label, dead label]
  * --------->
  * [return, goto]
+ * 
+ * Soundness: Any code after a return or a goto that is not a label is unreachable. It can be safely removed.
  */
-int remove_deadcode(CODE **c)
-{
+int remove_deadcode(CODE **c) {
   int x, l;
   if (is_return(*c) && (*c)->next != NULL && !(is_label(next(*c), &x)))
     return replace2(c, 2, makeCODEreturn(NULL));
@@ -701,6 +740,9 @@ int remove_deadcode(CODE **c)
  * ...
  * L1:
  * return
+ * 
+ * Soundness: If a goto instruction points to a label that simply consists of a return statement,
+ * it is equivalent to return instead of jumping to L1 and then returning.
  */
 int inline_return(CODE **c)
 {
@@ -723,6 +765,10 @@ int inline_return(CODE **c)
  * ------->
  * [if_cmplt, if_cmple, if_cmpgt, if_cmpge, if_cmpne, if_cmpne, if_acmpne, if_acmpne, ifne, ifeq, ifnonnull, ifnull] L2
  * L1:
+ * 
+ * Soundness: In the unoptimized version, if the if instruction branches, it will go to L1.
+ * Otherwise, it will execute the goto and go to L2. This is equivalent to flipping the if and going
+ * to L2 if the if branches and falling to L1 otherwise.
  */
 int inverse_cmp(CODE **c) {
   int l1;
@@ -733,6 +779,7 @@ int inverse_cmp(CODE **c) {
   }
   return 0;
 }
+
 /*
  * iconst x
  * istore y
@@ -743,6 +790,8 @@ int inverse_cmp(CODE **c) {
  * dup
  * istore y
  * istore z
+ * 
+ * Soundness: In both cases, x will be stored in locals y and z and the pattern has no overall effect on the stack.
  */
 int duplicate_store(CODE **c) {
   int x1;
@@ -876,6 +925,9 @@ int simplify_local_branching_10ne(CODE **c) {
  * [if_acmpeq, if_acmpne] L
  * ------>
  * [ifnull, ifnonnull] L
+ * 
+ * Soundness: Pushing null on the stack, then comparing a value to it is equivalend to using the
+ * dedicated ifnull and ifnonnull instructions.
  */
 int collapse_if_null(CODE **c) {
   int l;
@@ -896,6 +948,8 @@ int collapse_if_null(CODE **c) {
  * aload k
  * swap
  * putfield
+ * 
+ * Soundness: The three middle instructions don't use the lower part of the stack, so it is safe to cancel out the dup with the pop.
  */
 int putfield_dup_pop(CODE **c) {
   int k;
@@ -912,6 +966,17 @@ int putfield_dup_pop(CODE **c) {
   return 0;
 }
 
+/*
+ * [simplepush_1]
+ * [simplepush_2]
+ * swap
+ * ------>
+ * [simplepush_2]
+ * [simplepush_1]
+ * 
+ * Soundness: Since the two pushing instructions don't have any side-effect (apart from pushing a value on the stack)
+ * or special dependencies, their order can be swapped to avoid the swap instruction.
+ */
 int remove_unecessary_swap(CODE **c) {
   if (
     is_simplepush(*c) &&
@@ -931,6 +996,9 @@ int remove_unecessary_swap(CODE **c) {
  * pop
  * [not if, not goto, not load x]*
  * return
+ * 
+ * Soundness: This simply remover store instructions that happen right before a return. It is useless
+ * to store a value if it won't be used after.
  */
 int store_before_return(CODE **c) {
   int x1;
@@ -1291,6 +1359,10 @@ int simplify_if_else3(CODE **c)
  * L1:
  * dup
  * ifne L2
+ * 
+ * Soundness: Since a constant is on the stack, the behavior of the if instruction can be determined in advance.
+ * Thus, the goto instruction can jump to L2 right away instead of going to L1 first.
+ * This pattern helps trigger dead lanel removal.
  */
 int const_goto_if_dup(CODE **c) {
   int l1, l2, k;
